@@ -116,11 +116,13 @@ section{display:flex;flex-direction:column;gap:10px}
 /* sheet */
 .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:none}
 .backdrop.on{display:block}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--rule);max-height:92dvh;display:none;flex-direction:column;box-shadow:0 -10px 40px rgba(0,0,0,.5)}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--rule);max-height:92vh;max-height:92dvh;display:none;flex-direction:column;overflow:hidden;box-shadow:0 -10px 40px rgba(0,0,0,.5)}
 .sheet.on{display:flex}
 .sheet .grab{width:40px;height:4px;background:var(--rule);border-radius:2px;margin:10px auto 0}
 .sheet .head{display:flex;justify-content:space-between;align-items:center;padding:10px 16px 8px}
-.sheet .body{overflow:auto;padding:4px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px}
+.sheet .body{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;padding:4px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px}
+.sheet .grab,.sheet .head,.sheet .foot,.sheet .body>*{flex:none}
+body.modal{overflow:hidden}
 .sheet .body .list{box-shadow:none}
 .sheet .foot{display:flex;gap:8px;padding:10px 16px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--rule-2)}
 .sheet .foot .btn{flex:1}

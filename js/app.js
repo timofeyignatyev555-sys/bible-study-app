@@ -3,7 +3,7 @@ import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, s
 import * as store from './store.js';
 import * as sync from './sync.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 let state = null;
 let tab = 'week';
 let peopleFilter = '';
@@ -45,21 +45,43 @@ function hostStatusText(h) {
 let toastT;
 function toast(msg) { const el = $('#toast'); el.textContent = msg; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2200); }
 
-// ---------- state lifecycle
+// ---------- state lifecycle + undo history (per device, survives relaunch)
+const UNDO_MAX = 30;
+let lastSaved = null; // JSON of the last committed state, becomes the undo snapshot on the next commit
+const hist = k => { try { return JSON.parse(localStorage.getItem('bs.' + k) || '[]'); } catch { return []; } };
+const setHist = (k, arr) => { try { localStorage.setItem('bs.' + k, JSON.stringify(arr.slice(-UNDO_MAX))); } catch {} };
 function ensureSeason() { const added = fillSeason(state); if (added.length) state.meetings.push(...added); return added.length; }
 function replan() { state.meetings = plan(state, today()).meetings; }
-function commit(msg) {
+function persist() {
   state.updatedAt = new Date().toISOString();
   ensureSeason(); replan();
   store.save(state);
   sync.push(state, adopt);
+  lastSaved = JSON.stringify(state);
   render();
+}
+function commit(msg, label) {
+  if (lastSaved) { const u = hist('undo'); u.push({ label: label || msg || 'Change', at: new Date().toISOString(), state: lastSaved }); setHist('undo', u); setHist('redo', []); }
+  persist();
   if (msg) toast(msg);
+}
+function undo() {
+  const u = hist('undo'); if (!u.length) { toast('Nothing to undo'); return; }
+  const item = u.pop(); setHist('undo', u);
+  const r = hist('redo'); r.push({ label: item.label, at: new Date().toISOString(), state: JSON.stringify(state) }); setHist('redo', r);
+  state = store.normalize(JSON.parse(item.state), today()); persist(); toast('Undid: ' + item.label);
+}
+function redo() {
+  const r = hist('redo'); if (!r.length) { toast('Nothing to redo'); return; }
+  const item = r.pop(); setHist('redo', r);
+  const u = hist('undo'); u.push({ label: item.label, at: new Date().toISOString(), state: JSON.stringify(state) }); setHist('undo', u);
+  state = store.normalize(JSON.parse(item.state), today()); persist(); toast('Redid: ' + item.label);
 }
 function adopt(serverState, quiet) {
   state = store.normalize(serverState, today());
   ensureSeason(); replan();
   store.save(state);
+  lastSaved = JSON.stringify(state);
   render();
   if (!quiet) toast('Updated from your other device');
 }
@@ -83,7 +105,7 @@ async function boot() {
   if (hash.get('token')) { sync.setToken(hash.get('token')); history.replaceState(null, '', location.pathname + location.search); }
   const local = store.load();
   if (local) {
-    state = store.normalize(local, today()); ensureSeason(); replan(); showApp(); pullAndAdopt();
+    state = store.normalize(local, today()); ensureSeason(); replan(); lastSaved = JSON.stringify(state); showApp(); pullAndAdopt();
   } else if (sync.token()) {
     try {
       const r = await sync.pull(null);
@@ -237,7 +259,9 @@ function renderHosting() {
   const ms = sorted();
   const left = ms.filter(m => m.date >= t && m.status === 'on' && !m.location).length;
   const eligibleN = queue.filter(id => { const h = hh(id); return h && h.hostStatus === 'available'; }).length;
-  let html = `<div class="between"><h2>Hosting</h2><button class="btn sm" data-act="shuffle">Shuffle</button></div>
+  const u = hist('undo'), r = hist('redo');
+  let html = `<div class="between"><h2>Hosting</h2><span class="btn-row tight"><button class="btn sm" data-act="undo" ${u.length ? '' : 'disabled'} title="${esc(u.length ? u[u.length - 1].label : '')}">Undo</button><button class="btn sm" data-act="redo" ${r.length ? '' : 'disabled'}>Redo</button><button class="btn sm" data-act="shuffle">Shuffle</button></span></div>
+  ${u.length ? `<p class="dim">Undo steps back through your last ${u.length} change${u.length === 1 ? '' : 's'} (latest: ${esc(u[u.length - 1].label)}).</p>` : ''}
   <div class="stats"><div class="stat"><b>${queue.length}</b><span>households</span></div><div class="stat"><b>${eligibleN}</b><span>can host</span></div><div class="stat"><b>${left}</b><span>weeks to fill</span></div></div>
   <p class="dim">Order of who hosts next. Whoever has already hosted this season sits at the back. Move rows with the arrows; tap a name to set the address or availability.</p>`;
   if (!queue.length) html += `<div class="list"><div class="empty">Add people first.</div></div>`;
@@ -303,10 +327,10 @@ function openSheet(title, body, foot = []) {
   f.innerHTML = foot.map((b, i) => `<button class="btn ${b.cls || ''}" data-foot="${i}">${esc(b.label)}</button>`).join('');
   f.classList.toggle('hidden', !foot.length);
   f.querySelectorAll('[data-foot]').forEach(btn => btn.addEventListener('click', () => foot[+btn.dataset.foot].onClick()));
-  $('#backdrop').classList.add('on'); $('#sheet').classList.add('on');
+  $('#backdrop').classList.add('on'); $('#sheet').classList.add('on'); document.body.classList.add('modal');
   $('#sheetBody').scrollTop = 0;
 }
-function closeSheet() { $('#backdrop').classList.remove('on'); $('#sheet').classList.remove('on'); }
+function closeSheet() { $('#backdrop').classList.remove('on'); $('#sheet').classList.remove('on'); document.body.classList.remove('modal'); }
 const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
 
 function meetingSheet(id) {
@@ -355,7 +379,7 @@ function attendanceSheet(id) {
   const people = activePeople().sort((a, b) => a.name.localeCompare(b.name));
   const list = people.map(p => `<button class="check" role="checkbox" aria-checked="${!!present[p.id]}" data-p="${p.id}"><span class="box">${present[p.id] ? '✓' : ''}</span><span class="name">${esc(p.name)}</span></button>`).join('');
   openSheet('Attendance · ' + fmtDate(m.date), `<div class="between"><span class="muted" id="attCount"></span><span class="btn-row tight"><button class="btn sm" id="attAll">Everyone</button><button class="btn sm" id="attNone">Clear</button></span></div><div class="list" id="attList">${list}</div>`,
-    [{ label: 'Save', cls: 'primary', onClick: () => { m.attendance = present; closeSheet(); commit(`${Object.keys(present).length} marked present`); } }]);
+    [{ label: 'Save', cls: 'primary', onClick: () => { m.attendance = present; closeSheet(); commit(`${Object.keys(present).length} marked present`, 'Attendance'); } }]);
   const count = () => { $('#attCount').textContent = `${Object.keys(present).length} of ${people.length} present`; };
   count();
   $('#attList').querySelectorAll('.check').forEach(b => b.addEventListener('click', () => {
@@ -372,7 +396,7 @@ function cantHostSheet(id) {
   const q = currentQueue(state, today()).filter(x => x !== h.id && eligible(hh(x), m.date, m));
   const nxt = q.length ? hh(q[0]) : null;
   openSheet("Can't host", `<p>${esc(hostLabel(h))} can't host on <b>${fmtDate(m.date)}</b>.</p><p class="muted">${nxt ? `${esc(hostLabel(nxt))} takes this week, and ${esc(h.name)} hosts the next open week instead. Everyone after shifts by one.` : 'No one else is available for this date; the week will show "no host" until you pick someone.'}</p>`,
-    [{ label: 'Skip them this week', cls: 'primary', onClick: () => { m.skipped = [...(m.skipped || []), h.id]; m.hostMode = 'auto'; closeSheet(); commit(`${h.name} moved to the next open week`); } }, { label: 'Cancel', onClick: closeSheet }]);
+    [{ label: 'Skip them this week', cls: 'primary', onClick: () => { m.skipped = [...(m.skipped || []), h.id]; m.hostMode = 'auto'; closeSheet(); commit(`${h.name} moved to the next open week`, `Skip ${h.name}`); } }, { label: 'Cancel', onClick: closeSheet }]);
 }
 
 function changeHostSheet(id) {
@@ -381,8 +405,8 @@ function changeHostSheet(id) {
   const stats = hostStats(state, today());
   const list = hs.map(h => `<button class="row tap" data-pick="${h.id}"><div class="main"><div class="t">${esc(hostLabel(h))}${m.hostHouseholdId === h.id ? '<span class="chip accent">current</span>' : ''}${h.hostStatus !== 'available' ? `<span class="chip warn">${esc(hostStatusText(h))}</span>` : ''}</div><div class="s">${esc(h.address || 'no address')}</div></div><div class="k">${stats[h.id].hosted}× hosted</div></button>`).join('');
   openSheet('Host on ' + fmtDate(m.date), `<button class="btn" id="hostAuto">Back to automatic</button><div class="list">${list}</div>`);
-  $('#hostAuto').addEventListener('click', () => { m.hostMode = 'auto'; m.location = null; closeSheet(); commit('Host set automatically'); });
-  $('#sheetBody').querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => { m.hostHouseholdId = b.dataset.pick; m.hostMode = 'pinned'; m.location = null; m.status = 'on'; closeSheet(); commit(`${hh(b.dataset.pick).name} pinned for ${fmtShort(m.date)}`); }));
+  $('#hostAuto').addEventListener('click', () => { m.hostMode = 'auto'; m.location = null; closeSheet(); commit('Host set automatically', 'Automatic host'); });
+  $('#sheetBody').querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => { m.hostHouseholdId = b.dataset.pick; m.hostMode = 'pinned'; m.location = null; m.status = 'on'; closeSheet(); commit(`${hh(b.dataset.pick).name} pinned for ${fmtShort(m.date)}`, `Pin ${hh(b.dataset.pick).name}`); }));
 }
 
 function personSheet(id) {
@@ -509,12 +533,12 @@ function shuffleRemaining() {
   const q = currentQueue(state, t);
   const fresh = q.filter(id => !stats[id].hosted), done = q.filter(id => stats[id].hosted);
   state.rotation.order = [...shuffle(fresh), ...done];
-  commit('Order shuffled for everyone who has not hosted yet');
+  commit('Order shuffled for everyone who has not hosted yet', 'Shuffle');
 }
 function moveHousehold(id, dir) {
   const q = currentQueue(state, today());
   const i = q.indexOf(id); const j = i + dir; if (i < 0 || j < 0 || j >= q.length) return;
-  [q[i], q[j]] = [q[j], q[i]]; state.rotation.order = q; commit();
+  [q[i], q[j]] = [q[j], q[i]]; state.rotation.order = q; commit(null, `Move ${hh(id).name} ${dir < 0 ? 'up' : 'down'}`);
 }
 async function connectWith(t, errEl) {
   if (!t) return;
@@ -532,11 +556,11 @@ document.addEventListener('click', e => {
   const acts = {
     tab: () => { tab = b.dataset.tab; render(); window.scrollTo(0, 0); },
     attendance: () => attendanceSheet(id), canthost: () => cantHostSheet(id), changehost: () => changeHostSheet(id), editmeeting: () => meetingSheet(id),
-    cancel: () => { const m = state.meetings.find(x => x.id === id); m.status = 'off'; commit('Week cancelled; the host moves to the next week'); },
-    restore: () => { const m = state.meetings.find(x => x.id === id); m.status = 'on'; commit('Meeting is back on'); },
+    cancel: () => { const m = state.meetings.find(x => x.id === id); m.status = 'off'; commit('Week cancelled; the host moves to the next week', 'Cancel week'); },
+    restore: () => { const m = state.meetings.find(x => x.id === id); m.status = 'on'; commit('Meeting is back on', 'Restore week'); },
     copy: () => copySummary(id), edithh: () => householdSheet(id), addperson: () => personSheet(null), editperson: () => personSheet(id), addevent: () => addEventSheet(),
     unskip: () => { const m = state.meetings.find(x => x.id === id); m.skipped = []; closeSheet(); commit('Skip undone'); },
-    shuffle: () => shuffleRemaining(), move: () => moveHousehold(id, +b.dataset.dir),
+    shuffle: () => shuffleRemaining(), move: () => moveHousehold(id, +b.dataset.dir), undo, redo,
     savesettings: saveSettings, pull: () => { pullAndAdopt().then(() => toast('Pulled')); }, disconnect: () => { sync.setToken(null); render(); toast('Disconnected'); },
     connect: () => connectWith(v('setToken').trim(), $('#setTokenErr')),
     theme: () => { const val = b.dataset.v; store.setPref('theme', val === 'auto' ? null : val); if (val === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = val; render(); },
@@ -550,7 +574,7 @@ document.querySelectorAll('.tabbar button').forEach(b => b.addEventListener('cli
 $('#sheetClose').addEventListener('click', closeSheet); $('#backdrop').addEventListener('click', closeSheet);
 $('#tokenGo').addEventListener('click', () => connectWith(v('tokenIn').trim(), $('#tokenErr')));
 $('#tokenIn').addEventListener('keydown', e => { if (e.key === 'Enter') connectWith(v('tokenIn').trim(), $('#tokenErr')); });
-$('#startLocal').addEventListener('click', () => { state = store.normalize(store.emptyState(today()), today()); ensureSeason(); replan(); store.save(state); showApp(); });
+$('#startLocal').addEventListener('click', () => { state = store.normalize(store.emptyState(today()), today()); ensureSeason(); replan(); store.save(state); lastSaved = JSON.stringify(state); showApp(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state) { replan(); render(); pullAndAdopt(); } });
 window.addEventListener('online', () => sync.flushNow());
 window.addEventListener('pagehide', () => sync.flushNow());
