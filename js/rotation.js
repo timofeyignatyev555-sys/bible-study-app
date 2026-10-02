@@ -183,6 +183,22 @@ export function reassignHost(state, meetingId, toId, today) {
   return { kind: 'cover', from, to: toId, date: m.date };
 }
 
+// Put a household on hold (until a date, or until further notice) or take it off hold.
+// Weeks pinned to it (swaps) from today on go back to the normal order, so the next person takes them.
+export function setHold(state, hid, onHold, until = null, today) {
+  const h = state.households.find(x => x.id === hid);
+  if (!h) return { error: 'Unknown household.' };
+  if (h.hostStatus === 'never') return { error: 'Only the leader can change this household.' };
+  if (onHold) {
+    if (until && (!/^\d{4}-\d{2}-\d{2}$/.test(until) || until <= today)) return { error: 'Pick a date after today.' };
+    h.hostStatus = 'unavailable'; h.unavailableUntil = until || null;
+    for (const m of state.meetings) {
+      if (m.hostHouseholdId === hid && m.hostMode === 'pinned' && !isPast(m, today) && (!until || m.date < until)) m.hostMode = 'auto';
+    }
+  } else { h.hostStatus = 'available'; h.unavailableUntil = null; }
+  return { ok: true };
+}
+
 // Deterministic shuffle helper (Fisher-Yates with an injectable rng) used by the seed and the Hosting tab.
 export function shuffle(arr, rng = Math.random) {
   const a = [...arr];

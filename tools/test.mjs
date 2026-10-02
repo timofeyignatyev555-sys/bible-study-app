@@ -1,6 +1,6 @@
 // Generator tests. Run: node tools/test.mjs
 import assert from 'node:assert/strict';
-import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, householdLabel, reassignHost, nextInLine } from '../js/rotation.js';
+import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, householdLabel, reassignHost, nextInLine, setHold } from '../js/rotation.js';
 import { merge3 } from '../js/store.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok  ' + name); };
@@ -159,5 +159,21 @@ t('merge3: same field edited on both sides, this device wins', () => {
   const local = JSON.parse(JSON.stringify(base)), server = JSON.parse(JSON.stringify(base));
   local.households[0].address = 'mine'; server.households[0].address = 'theirs';
   assert.equal(merge3(base, local, server, TODAY).households[0].address, 'mine');
+});
+t('hold: household drops out of the plan, its swapped week goes back to the order, then returns', () => {
+  const s = replanned(mk(['A', 'B', 'C', 'D']));
+  reassignHost(s, 'm1', 'C', TODAY); replanned(s);
+  assert.equal(setHold(s, 'C', true, null, TODAY).ok, true); replanned(s);
+  assert.ok(!hosts(s).includes('C'));
+  assert.deepEqual(hosts(s), ['B', 'D', 'A', 'B', 'D', 'A']);
+  setHold(s, 'C', false, null, TODAY); replanned(s);
+  assert.ok(hosts(s).includes('C'));
+});
+t('hold until a date: back in the plan from that date', () => {
+  const s = replanned(mk(['A', 'B', 'C', 'D']));
+  setHold(s, 'A', true, D[3], TODAY); replanned(s);
+  assert.deepEqual(hosts(s).slice(0, 3), ['B', 'C', 'D']); assert.equal(hosts(s)[3], 'A');
+  assert.ok(setHold(s, 'A', true, '2020-01-01', TODAY).error);
+  s.households[1].hostStatus = 'never'; assert.ok(setHold(s, 'B', false, null, TODAY).error);
 });
 console.log(`\n${n} tests passed`);

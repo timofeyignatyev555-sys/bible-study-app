@@ -155,6 +155,36 @@ await G.locator('#gRefresh').click(); await wait(900);
 await goMonth(G, later.date);
 const cellAfter = await calCell(G, later.date);
 check(!cellAfter.includes(victim.name.split(' ')[0]), `group calendar no longer shows the removed person on ${later.date} (${cellAfter.replace(/\n/g, ' ')})`);
+
+// phones + hold from the group page
+const s6 = await server();
+const heldMeet = s6.meetings.filter(m => m.date > TODAY && m.status === 'on' && !m.location && m.hostHouseholdId && m.hostMode === 'auto').sort((a, b) => a.date < b.date ? -1 : 1)[0];
+const heldH = heldMeet.hostHouseholdId;
+const heldP = s6.people.find(p => p.householdId === heldH && p.active !== false);
+await G.locator('[data-act="view"][data-v="list"]').click(); await wait(300);
+await G.locator(`#g [data-act="hh"][data-id="${heldH}"]`).first().click(); await wait(300);
+await G.locator(`#sheetBody input.phone[data-pid="${heldP.id}"]`).fill('612-555-0199'); await G.locator('#sheetFoot .btn.primary').click(); await wait(900);
+let s7 = await server();
+check(s7.people.find(p => p.id === heldP.id).phone === '612-555-0199', 'member phone saved to the cloud');
+await G.locator(`#g [data-act="hh"][data-id="${heldH}"]`).first().click(); await wait(300);
+check(/call/.test(await G.locator('#sheetBody').innerText()), 'saved phone shows call/text links');
+await G.locator('#hHold').click(); await wait(200);
+await shot(G, '14-group-hold');
+await G.locator('#sheetFoot .btn.primary').click(); await wait(900);
+s7 = await server();
+check(s7.households.find(h => h.id === heldH).hostStatus === 'unavailable', 'member put their household on hold');
+check(!s7.meetings.some(m => m.date >= TODAY && m.hostHouseholdId === heldH), 'on-hold household is out of the schedule');
+check(s7.meetings.find(m => m.id === heldMeet.id).hostHouseholdId && s7.meetings.find(m => m.id === heldMeet.id).hostHouseholdId !== heldH, `their week ${heldMeet.date} went to the next person`);
+gt = await G.locator('#g').innerText();
+check(/on hold/i.test(gt), 'group list shows "on hold"');
+await L.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await wait(1500);
+check(await L.evaluate(id => window.__bs.state.households.find(h => h.id === id).hostStatus, heldH) === 'unavailable', 'leader app sees the hold');
+check(await L.evaluate(id => window.__bs.state.people.find(p => p.id === id).phone, heldP.id) === '612-555-0199', 'leader app sees the phone');
+await G.locator(`#g [data-act="hh"][data-id="${heldH}"]`).first().click(); await wait(300);
+await G.locator('#hBack').click(); await wait(900);
+s7 = await server();
+check(s7.households.find(h => h.id === heldH).hostStatus === 'available' && s7.meetings.some(m => m.date >= TODAY && m.hostHouseholdId === heldH), 'can host again puts them back in the schedule');
+
 console.log('\nerrors:', errors.length ? errors.join('\n') : 'none');
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nall passed');
 await browser.close();

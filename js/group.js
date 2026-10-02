@@ -77,7 +77,7 @@ function render() {
   if (!g) { main.innerHTML = netState === 'offline' ? `<div class="card"><h2>No connection</h2><p class="muted" style="margin-top:6px">Connect to the internet and tap Refresh.</p></div>` : `<div class="empty">Loading…</div>`; return; }
   $('#gName').textContent = g.name; document.title = g.name + ' · Hosting';
   const view = pref('view') || 'list';
-  let html = renderThisWeek() + `<div class="notice info">Find your name and tap it to add your address. Can't host your week? Tap your name too.</div>
+  let html = renderThisWeek() + `<div class="notice info">Find your name and tap it to add your address and phone. Can't host your week, or need a break from hosting? Tap your name too.</div>
     <div class="seg"><button data-act="view" data-v="list" aria-pressed="${view === 'list'}">Hosting list</button><button data-act="view" data-v="cal" aria-pressed="${view === 'cal'}">Calendar</button></div>`;
   html += view === 'cal' ? renderCalendar() : renderSchedule();
   if (g.log && g.log.length) html += `<section><h2>Recent changes</h2><div class="list">${g.log.slice().reverse().slice(0, 5).map(e => `<div class="row"><div class="main"><div class="t" style="font-weight:500">${esc(e.text)}</div><div class="s">${fmtStamp(e.at)}</div></div></div>`).join('')}</div></section>`;
@@ -106,7 +106,7 @@ function row(m) {
   const inner = `<div class="when"><b>${fmtShort(m.date)}</b>${DOW[dow(m.date)].slice(0, 3)}</div><div class="main"><div class="t">${title}</div><div class="s">${sub || '&nbsp;'}</div></div>${m.status === 'on' && m.kind === 'event' ? '<div class="k"><span class="chip info">event</span></div>' : (tappable ? '<div class="k">›</div>' : '')}`;
   return tappable ? `<button class="row tap ${m.past ? 'past' : ''}" data-act="hh" data-id="${m.hostId}">${inner}</button>` : `<div class="row ${m.past ? 'past' : ''}">${inner}</div>`;
 }
-const hhRow = (h, lead) => `<button class="row tap" data-act="hh" data-id="${h.id}">${lead}<div class="main"><div class="t">${esc(h.label)}</div><div class="s">${h.address ? esc(h.address) : '<span class="warn-text">tap to add address</span>'}</div></div><div class="k">›</div></button>`;
+const hhRow = (h, lead) => `<button class="row tap" data-act="hh" data-id="${h.id}">${lead}<div class="main"><div class="t">${esc(h.label)}${h.status !== 'available' ? ` <span class="chip warn">${esc(h.status === 'never' ? 'not hosting' : (h.until ? 'on hold until ' + fmtShort(h.until) : 'on hold'))}</span>` : ''}</div><div class="s">${h.address ? esc(h.address) : '<span class="warn-text">tap to add address</span>'}</div></div><div class="k">›</div></button>`;
 
 function renderSchedule() {
   const up = upcoming(), past = g.meetings.filter(m => m.past);
@@ -148,40 +148,69 @@ function daySheet(mid) {
        <div class="muted">${a ? `<a href="${mapsUrl(a)}" target="_blank" rel="noopener">${esc(a)}</a> · ` : ''}${fmtTime(m.time)}</div>${m.topic ? `<p class="dim">${esc(m.topic)}</p>` : ''}`);
 }
 
-// ---------- tapping a name: address + hosting week
+// ---------- tapping a name: hosting week, address, phones, hold
+const telUrl = p => 'tel:' + p.replace(/[^0-9+]/g, '');
+const holdText = h => h.status === 'never' ? 'Not hosting' : (h.status === 'unavailable' ? (h.until ? `On hold until ${fmtShort(h.until)}` : 'On hold for now') : '');
 function hhSheet(hid) {
   const h = hh(hid); if (!h) return;
+  const people = g.people.filter(p => p.householdId === h.id);
   const next = nextDate(h.id);
   const pos = g.nextInLine.indexOf(h.id);
+  const held = h.status === 'unavailable';
   const turn = next ? `Hosting <b>${fmtLong(next.date)}</b> at ${fmtTime(next.time)}${next.title ? ' · ' + esc(next.title) : ''}`
-    : pos >= 0 ? `#${pos + 1} in line after the last scheduled week` : (canHost(h) ? 'Not scheduled yet' : 'Not hosting right now');
+    : held || h.status === 'never' ? esc(holdText(h)) : pos >= 0 ? `#${pos + 1} in line after the last scheduled week` : 'Not scheduled yet';
+  const first = h.label.split(' (')[0];
   openSheet(h.label, `
     <p class="muted">${turn}</p>
     <div class="field"><label for="hAddr">Address</label><input id="hAddr" value="${esc(h.address)}" placeholder="Street, City" autocomplete="street-address"></div>
-    <p class="dim">So everyone knows where to go when it's ${esc(h.label.split(' (')[0])}'s week.</p>
-    ${next ? `<button class="btn" id="hSwap" style="width:100%">Can't host ${fmtShort(next.date)}?</button>` : ''}`,
-    [{ label: 'Save address', cls: 'primary', onClick: () => {
-      const v = ($('#hAddr').value || '').trim();
-      if (!v && !h.address) { toast('Type the address first'); return; }
-      if (v === h.address) { closeSheet(); return; }
-      act({ type: 'address', householdId: h.id, address: v, by: h.label }, 'Address saved');
+    ${people.map(p => `<div class="field"><label for="ph_${esc(p.id)}">${people.length > 1 ? esc(p.name.split(' ')[0]) + "'s phone" : 'Phone'}${p.phone ? ` · <a href="${telUrl(p.phone)}">call</a> · <a href="sms:${p.phone.replace(/[^0-9+]/g, '')}">text</a>` : ''}</label><input id="ph_${esc(p.id)}" data-pid="${esc(p.id)}" class="phone" type="tel" value="${esc(p.phone)}" placeholder="(612) 555-0123" autocomplete="tel"></div>`).join('')}
+    <p class="dim">Everyone in the group can see these, so you can reach each other about swaps.</p>
+    ${next ? `<button class="btn" id="hSwap" style="width:100%">Can't host ${fmtShort(next.date)}?</button>` : ''}
+    ${h.status === 'never' ? '' : held
+      ? `<div class="notice">${esc(first)} ${people.length > 1 ? 'are' : 'is'} on hold${h.until ? ' until ' + fmtLong(h.until) : ''} and won't be scheduled to host.</div><button class="btn" id="hBack" style="width:100%">${people.length > 1 ? 'We' : 'I'} can host again</button>`
+      : `<button class="btn ghost" id="hHold" style="width:100%">Put on hold (can't host for a while)</button>`}`,
+    [{ label: 'Save', cls: 'primary', onClick: () => {
+      const address = ($('#hAddr').value || '').trim();
+      const phones = {}; document.querySelectorAll('#sheetBody input.phone').forEach(i => { phones[i.dataset.pid] = i.value.trim(); });
+      const same = address === (h.address || '') && people.every(p => (phones[p.id] || '') === (p.phone || ''));
+      if (same) { closeSheet(); return; }
+      act({ type: 'info', householdId: h.id, address, phones, by: h.label }, 'Saved');
     } }]);
   if (next) $('#hSwap').addEventListener('click', () => swapSheet(h.id, next.id));
+  if ($('#hHold')) $('#hHold').addEventListener('click', () => holdSheet(h.id));
+  if ($('#hBack')) $('#hBack').addEventListener('click', () => act({ type: 'available', householdId: h.id, by: h.label }, `${first} can host again`));
+}
+function holdSheet(hid) {
+  const h = hh(hid); const next = nextDate(h.id);
+  openSheet('Put on hold', `<p>${esc(h.label)} won't be scheduled to host while on hold. ${next ? `Their week on ${fmtShort(next.date)} goes to the next person in line, and everyone after moves up.` : ''}</p>
+    <div class="field"><label>How long?</label><div class="seg" id="holdLen"><button data-v="open" aria-pressed="true">Until further notice</button><button data-v="date" aria-pressed="false">Until a date</button></div></div>
+    <div class="field hidden" id="holdDateWrap"><label for="holdDate">Can host again from</label><input id="holdDate" type="date" min="${addDays(g.today, 1)}"></div>`,
+    [{ label: 'Put on hold', cls: 'primary', onClick: () => {
+      const dated = $('#holdLen [aria-pressed="true"]').dataset.v === 'date';
+      const until = dated ? $('#holdDate').value : null;
+      if (dated && !until) { toast('Pick the date'); return; }
+      act({ type: 'hold', householdId: h.id, until, by: h.label }, 'On hold. The schedule moved up.');
+    } }, { label: 'Back', onClick: () => hhSheet(hid) }]);
+  document.querySelectorAll('#holdLen button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#holdLen button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    $('#holdDateWrap').classList.toggle('hidden', b.dataset.v !== 'date');
+  }));
 }
 
 function swapSheet(fromId, mid) {
   const m = g.meetings.find(x => x.id === mid); const from = hh(fromId); if (!m || !from) return;
-  const cands = g.households.filter(h => h.id !== from.id && h.status !== 'never' && g.people.some(p => p.householdId === h.id));
+  const cands = g.households.filter(h => h.id !== from.id && h.status === 'available' && g.people.some(p => p.householdId === h.id));
   const withDate = cands.map(h => ({ h, d: nextDate(h.id) })).filter(x => x.d).sort((a, b) => a.d.date < b.d.date ? -1 : 1);
   const without = cands.filter(h => !nextDate(h.id)).sort((a, b) => { const i = g.nextInLine.indexOf(a.id), j = g.nextInLine.indexOf(b.id); return (i < 0 ? 999 : i) - (j < 0 ? 999 : j) || a.label.localeCompare(b.label); });
-  const r = (h, sub, extra) => `<button class="row tap" data-to="${h.id}" data-sub="${esc(extra)}"><div class="main"><div class="t">${esc(h.label)}</div><div class="s wrap">${sub}</div></div></button>`;
+  const phonesOf = h => g.people.filter(p => p.householdId === h.id && p.phone).map(p => p.phone).join(', ');
+  const r = (h, sub, extra) => `<button class="row tap" data-to="${h.id}" data-sub="${esc(extra)}"><div class="main"><div class="t">${esc(h.label)}</div><div class="s wrap">${sub}${phonesOf(h) ? ' · ' + esc(phonesOf(h)) : ''}</div></div></button>`;
   const fromName = from.label.split(' (')[0];
   openSheet(`Can't host ${fmtShort(m.date)}?`, `
     <div class="notice info">First talk to someone and make sure they can take ${fmtLong(m.date)}. Then pick them here so everyone sees the change.</div>
     <input id="swapSearch" type="search" placeholder="Search a name" autocomplete="off" style="width:100%;background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:1rem">
     ${withDate.length ? `<div class="eyebrow">Already have a week: you trade</div><div class="list">${withDate.map(({ h, d }) => r(h, `Hosts ${fmtShort(d.date)} · ${esc(fromName)} would take ${fmtShort(d.date)}`, `${h.label} hosts ${fmtShort(m.date)} and ${fromName} hosts ${fmtShort(d.date)}.`)).join('')}</div>` : ''}
     ${without.length ? `<div class="eyebrow">Not on the schedule yet</div><div class="list">${without.map(h => r(h, `Takes ${fmtShort(m.date)} · ${esc(fromName)} hosts the next open week`, `${h.label} hosts ${fmtShort(m.date)}. ${fromName} moves to the next open week and everyone after shifts by one.`)).join('')}</div>` : ''}
-    <p class="dim">Nobody can? Message Tim.</p>`);
+    <p class="dim">People on hold aren't listed. Nobody can? Message Tim.</p>`);
   $('#swapSearch').addEventListener('input', e => { const q = e.target.value.trim().toLowerCase(); $('#sheetBody').querySelectorAll('[data-to]').forEach(b => b.classList.toggle('hidden', !!q && !b.textContent.toLowerCase().includes(q))); });
   $('#sheetBody').querySelectorAll('[data-to]').forEach(b => b.addEventListener('click', () => {
     const to = hh(b.dataset.to);
@@ -203,6 +232,6 @@ $('#gRefresh').addEventListener('click', () => { netState = 'loading'; render();
 $('#sheetClose').addEventListener('click', closeSheet); $('#backdrop').addEventListener('click', closeSheet);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !document.body.classList.contains('modal')) refresh(true); });
 setInterval(() => { if (document.visibilityState === 'visible' && !document.body.classList.contains('modal')) refresh(true); }, 120000);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('../sw.js').catch(() => {});
+if ('serviceWorker' in navigator && location.pathname.includes('/group/')) navigator.serviceWorker.register('../sw.js').catch(() => {});
 render();
 refresh(true);

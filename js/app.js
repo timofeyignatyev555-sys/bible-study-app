@@ -1,11 +1,11 @@
 // Bible Study: roster, calendar, attendance and hosting rotation. Phone-first, local-first, mirrored to the cloud.
 // The group page (group/) reads and writes the same cloud copy through the worker; sync merges those changes in.
-import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, isPast, hasAttendance, weekdayOf, addDays, householdLabel, reassignHost, nextInLine, liveHouseholds } from './rotation.js';
+import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, isPast, hasAttendance, weekdayOf, addDays, householdLabel, reassignHost, nextInLine, liveHouseholds, setHold } from './rotation.js';
 import * as store from './store.js';
 import * as sync from './sync.js';
 import { calendarHTML, shortName, shiftMonth, startMonth } from './calgrid.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 let state = null;
 let tab = 'week';
 let peopleFilter = '';
@@ -42,7 +42,7 @@ function whereText(m) {
 function whereAddr(m) { if (m.location) return m.location.address || ''; const h = hh(m.hostHouseholdId); return h ? h.address || '' : ''; }
 function hostStatusText(h) {
   if (h.hostStatus === 'never') return 'never hosts';
-  if (h.hostStatus === 'unavailable') return h.unavailableUntil ? `back ${fmtShort(h.unavailableUntil)}` : 'not for now';
+  if (h.hostStatus === 'unavailable') return h.unavailableUntil ? `on hold until ${fmtShort(h.unavailableUntil)}` : 'on hold';
   return '';
 }
 // Where a household sits in the plan, in words: "hosts Dec 18" or "#3 in line after the season".
@@ -590,7 +590,7 @@ function householdSheet(id) {
   const body = `
   <div class="sheet-hero"><div class="who"><span class="host">${esc(hostLabel(h))}</span></div><div class="dim">${esc(placement(id))}${st.hosted ? ` · hosted ${st.hosted}× (last ${fmtShort(st.lastHosted)})` : ''}</div></div>
   <div class="field"><label for="hAddr">Address</label><input id="hAddr" value="${esc(h.address)}" placeholder="Street, City" autocomplete="street-address"></div>
-  <div class="field"><label>Can they host?</label><div class="seg" id="hStatus"><button data-v="available" aria-pressed="${h.hostStatus === 'available'}">Yes</button><button data-v="until" aria-pressed="${h.hostStatus === 'unavailable' && !!h.unavailableUntil}">From a date</button><button data-v="indef" aria-pressed="${h.hostStatus === 'unavailable' && !h.unavailableUntil}">Not for now</button><button data-v="never" aria-pressed="${h.hostStatus === 'never'}">Never</button></div></div>
+  <div class="field"><label>Can they host?</label><div class="seg" id="hStatus"><button data-v="available" aria-pressed="${h.hostStatus === 'available'}">Yes</button><button data-v="until" aria-pressed="${h.hostStatus === 'unavailable' && !!h.unavailableUntil}">Hold until</button><button data-v="indef" aria-pressed="${h.hostStatus === 'unavailable' && !h.unavailableUntil}">On hold</button><button data-v="never" aria-pressed="${h.hostStatus === 'never'}">Never</button></div></div>
   <div class="field ${h.hostStatus === 'unavailable' && h.unavailableUntil ? '' : 'hidden'}" id="hUntilWrap"><label for="hUntil">Can host again from</label><input id="hUntil" type="date" value="${esc(h.unavailableUntil || '')}"></div>
   <div class="field"><label for="hNote">Note</label><input id="hNote" value="${esc(h.note || '')}" placeholder="e.g. remodeling until December"></div>
   ${pos >= 0 ? `<div class="field"><label>Place in the hosting order</label><div class="between"><span class="muted">#${pos + 1} of ${q.length}</span><span class="btn-row tight"><button class="btn sm" id="hUp" ${pos === 0 ? 'disabled' : ''}>Earlier</button><button class="btn sm" id="hDown" ${pos === q.length - 1 ? 'disabled' : ''}>Later</button></span></div></div>` : ''}
@@ -599,10 +599,14 @@ function householdSheet(id) {
   openSheet('Household', body, [{ label: 'Save', cls: 'primary', onClick: () => {
     const mode = $('#hStatus [aria-pressed="true"]').dataset.v;
     h.name = v('hName').trim() || h.name; h.address = v('hAddr').trim(); h.note = v('hNote').trim();
-    if (mode === 'available') { h.hostStatus = 'available'; h.unavailableUntil = null; }
-    else if (mode === 'until') { const d = v('hUntil'); if (!d) { toast('Pick the date they can host again'); return; } h.hostStatus = 'unavailable'; h.unavailableUntil = d; }
-    else if (mode === 'indef') { h.hostStatus = 'unavailable'; h.unavailableUntil = null; }
-    else { h.hostStatus = 'never'; h.unavailableUntil = null; }
+    if (mode === 'never') { h.hostStatus = 'never'; h.unavailableUntil = null; }
+    else {
+      if (h.hostStatus === 'never') h.hostStatus = 'available';
+      const until = mode === 'until' ? v('hUntil') : null;
+      if (mode === 'until' && !until) { toast('Pick the date they can host again'); return; }
+      const r = setHold(state, h.id, mode !== 'available', until, today()); // also hands their swapped weeks back to the order
+      if (r.error) { toast(r.error); return; }
+    }
     closeSheet(); commit(null, `Edit ${hostLabel(h)}`); toast(`Saved: ${hostLabel(h)} ${placement(h.id)}`);
   } }]);
   wireSeg('hStatus', val => $('#hUntilWrap').classList.toggle('hidden', val !== 'until'));

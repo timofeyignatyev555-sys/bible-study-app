@@ -3,7 +3,8 @@
 import { getPref, setPref } from './store.js';
 
 export const WORKER_URL = getPref('worker') || 'https://bible-study-sync.ophir-marketing-agency.workers.dev';
-export const GROUP_PAGE = new URL('group/', location.href).href;
+// Members' page lives on Cloudflare Pages so the link carries no personal name; local dev uses the copy in group/.
+export const GROUP_PAGE = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? new URL('group/', location.href).href : 'https://friday-bible-study.pages.dev/';
 
 const listeners = new Set();
 export const status = { state: 'local', detail: '', lastSync: null, dirty: false };

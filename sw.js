@@ -1,5 +1,5 @@
 // Bible Study service worker: offline app shell for the leader app and the group page. Bump VERSION on every deploy.
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 const CACHE = 'biblestudy-' + VERSION;
 const SHELL = ['./', './index.html', './group/', './group/index.html', './css/app.css', './manifest.webmanifest', './js/app.js', './js/rotation.js', './js/store.js', './js/sync.js', './js/group.js', './js/calgrid.js', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
