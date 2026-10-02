@@ -3,11 +3,13 @@
 import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, isPast, hasAttendance, weekdayOf, addDays, householdLabel, reassignHost, nextInLine, liveHouseholds } from './rotation.js';
 import * as store from './store.js';
 import * as sync from './sync.js';
+import { calendarHTML, shortName, shiftMonth, startMonth } from './calgrid.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 let state = null;
 let tab = 'week';
 let peopleFilter = '';
+let calMonth = null; // 'YYYY-MM' shown in the month view
 
 // ---------- helpers
 const $ = s => document.querySelector(s);
@@ -52,6 +54,14 @@ function placement(hid) {
   const i = nextInLine(state, t).indexOf(hid);
   if (i >= 0) return `#${i + 1} in line after the season`;
   return hostStatusText(h) || 'not scheduled';
+}
+
+// Light unless the user picked dark, or "auto" and the phone is in dark mode.
+function applyTheme() {
+  const pref = store.getPref('theme') || 'light';
+  const dark = pref === 'dark' || (pref === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#101418' : '#FAF8F4';
 }
 
 let toastT;
@@ -137,7 +147,7 @@ function showConnect(err) {
 function showApp() { $('#connect').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#tabbar').classList.remove('hidden'); render(); }
 
 async function boot() {
-  const theme = store.getPref('theme'); if (theme) document.documentElement.dataset.theme = theme;
+  applyTheme();
   const hash = new URLSearchParams(location.hash.slice(1));
   if (hash.get('token')) { sync.setToken(hash.get('token')); history.replaceState(null, '', location.pathname + location.search); }
   const local = store.load();
@@ -237,22 +247,42 @@ function rowMeeting(m, opts = {}) {
   return `<button class="row tap ${past ? 'past' : ''}" data-act="week" data-id="${m.id}"><div class="when"><b>${fmtShort(m.date)}</b>${DOW[weekdayOf(m.date)].slice(0, 3)}</div><div class="main"><div class="t">${title}</div><div class="s ${opts.hosting && isHome(m) && m.hostHouseholdId && !addr ? 'warn' : ''}">${esc(sub) || '&nbsp;'}</div></div><div class="k">${chipsFor(m)}</div></button>`;
 }
 
+// Calendar rows for the month grid: same data as every list, so swaps, new people and addresses show up here too.
+function calRows() {
+  const t = today();
+  return sorted().map(m => {
+    const h = hh(m.hostHouseholdId);
+    const short = m.location ? (m.kind === 'event' && m.title ? m.title : (m.location.name || 'Elsewhere')) : (m.kind === 'event' && m.title ? m.title : (h ? shortName(hostLabel(h)) : 'No host'));
+    return { id: m.id, date: m.date, status: m.status, kind: m.kind, short, past: isPast(m, t) && m.date < t, noAddr: isHome(m) && !!h && !h.address };
+  });
+}
 function renderCalendar() {
   const ms = sorted();
-  let html = `<div class="between"><h2>Calendar</h2><button class="btn sm" data-act="addevent">+ Add event</button></div>`;
+  const view = store.getPref('calView') || 'month';
+  let html = `<div class="between"><h2>Calendar</h2><button class="btn sm" data-act="addevent">+ Add event</button></div>
+  <div class="seg"><button data-act="calview" data-v="month" aria-pressed="${view === 'month'}">Month</button><button data-act="calview" data-v="list" aria-pressed="${view === 'list'}">List</button></div>`;
   if (!ms.length) html += `<div class="list"><div class="empty">No meetings yet. Set the season in Settings.</div></div>`;
-  let curMonth = '';
-  let open = false;
-  for (const m of ms) {
-    const mk = m.date.slice(0, 7);
-    if (mk !== curMonth) {
-      if (open) html += '</div>';
-      curMonth = mk; const [y, mo] = parts(m.date);
-      html += `<div class="eyebrow month">${MONL[mo - 1]} ${y}</div><div class="list">`; open = true;
+  else if (view === 'month') {
+    const rows = calRows();
+    if (!calMonth) calMonth = startMonth(rows, today());
+    html += calendarHTML(calMonth, rows, today());
+    const inMonth = ms.filter(m => m.date.slice(0, 7) === calMonth);
+    html += inMonth.length ? `<div class="list">${inMonth.map(m => rowMeeting(m)).join('')}</div>` : '<p class="dim">No meetings this month.</p>';
+    html += '<p class="dim">Tap a day to change who hosts, swap, or cancel that week.</p>';
+  } else {
+    let curMonth = '';
+    let open = false;
+    for (const m of ms) {
+      const mk = m.date.slice(0, 7);
+      if (mk !== curMonth) {
+        if (open) html += '</div>';
+        curMonth = mk; const [y, mo] = parts(m.date);
+        html += `<div class="eyebrow month">${MONL[mo - 1]} ${y}</div><div class="list">`; open = true;
+      }
+      html += rowMeeting(m);
     }
-    html += rowMeeting(m);
+    if (open) html += '</div>';
   }
-  if (open) html += '</div>';
   $('#p-calendar').innerHTML = html;
 }
 
@@ -311,7 +341,7 @@ function syncLine() {
 
 function renderSettings() {
   const s = state.settings;
-  const theme = store.getPref('theme') || 'auto';
+  const theme = store.getPref('theme') || 'light';
   const link = sync.cachedGroupLink();
   $('#p-settings').innerHTML = `
   <section><h2>Group link</h2><div class="card stack" style="gap:12px">
@@ -337,7 +367,7 @@ function renderSettings() {
     <div id="syncLine">${syncLine()}</div>
     ${sync.token() ? `<div class="btn-row"><button class="btn" data-act="pull">Pull now</button><button class="btn" data-act="disconnect">Disconnect this device</button></div>` : `<div class="field"><label for="setToken">Sync token</label><input id="setToken" type="password" autocomplete="off" placeholder="paste token"></div><div class="err hidden" id="setTokenErr"></div><button class="btn primary" data-act="connect">Connect</button>`}
   </div></section>
-  <section><h2>Appearance</h2><div class="card"><div class="seg">${['auto', 'dark', 'light'].map(v => `<button data-act="theme" data-v="${v}" aria-pressed="${theme === v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div></section>
+  <section><h2>Appearance</h2><div class="card"><div class="seg">${['light', 'dark', 'auto'].map(v => `<button data-act="theme" data-v="${v}" aria-pressed="${theme === v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div></section>
   <section><h2>Backup</h2><div class="card stack" style="gap:10px">
     <div class="btn-row"><button class="btn" data-act="export">Export JSON</button><button class="btn" data-act="importpick">Import JSON</button></div>
     <input type="file" id="importFile" accept="application/json,.json" class="hidden">
@@ -670,7 +700,10 @@ document.addEventListener('click', e => {
   const { act, id } = b.dataset;
   const acts = {
     tab: () => { tab = b.dataset.tab; render(); window.scrollTo(0, 0); },
-    week: () => weekSheet(id), pickhost: () => pickHostSheet(id), canthost: () => cantHost(id),
+    week: () => weekSheet(id), calday: () => weekSheet(id),
+    calnav: () => { calMonth = shiftMonth(calMonth, +b.dataset.dir); render(); },
+    calview: () => { store.setPref('calView', b.dataset.v); render(); },
+    pickhost: () => pickHostSheet(id), canthost: () => cantHost(id),
     autohost: () => { const m = meeting(id); m.hostMode = 'auto'; closeSheet(); commit(null, 'Back to normal order'); const nm = meeting(id); toast(`${nm.hostHouseholdId ? hostLabel(hh(nm.hostHouseholdId)) : 'Nobody'} hosts ${fmtShort(nm.date)}`); },
     attendance: () => attendanceSheet(id), editmeeting: () => meetingSheet(id),
     cancel: () => { const m = meeting(id); m.status = 'off'; closeSheet(); commit('No meeting that week; the host moves to the next week', 'Cancel week'); },
@@ -683,7 +716,7 @@ document.addEventListener('click', e => {
     resetgroup: () => openSheet('Reset the group link?', '<p class="muted">The current link stops working for everyone. You will need to send the new link to the group.</p>', [{ label: 'Reset', cls: 'danger', onClick: async () => { closeSheet(); const u = await getGroupLink(true); if (u) { render(); toast('New link ready; share it with the group'); } } }, { label: 'Keep', onClick: closeSheet }]),
     savesettings: saveSettings, pull: () => { pullAndAdopt().then(() => toast('Pulled')); }, disconnect: () => { sync.setToken(null); render(); toast('Disconnected'); },
     connect: () => connectWith(v('setToken').trim(), $('#setTokenErr')),
-    theme: () => { const val = b.dataset.v; store.setPref('theme', val === 'auto' ? null : val); if (val === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = val; render(); },
+    theme: () => { const val = b.dataset.v; store.setPref('theme', val === 'light' ? null : val); applyTheme(); render(); },
     export: exportJSON, importpick: () => $('#importFile').click(),
     resetlocal: () => openSheet('Clear this device?', '<p class="muted">The local copy and token are removed from this browser. Your cloud copy stays.</p>', [{ label: 'Clear', cls: 'danger', onClick: () => { store.clear(); sync.setToken(null); location.reload(); } }, { label: 'Keep', onClick: closeSheet }])
   };

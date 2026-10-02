@@ -54,7 +54,7 @@ check(glink && glink.includes('/group/?k='), 'settings shows the group link');
 // ---- member
 const G = await mk(`localStorage.setItem('bs.worker', ${JSON.stringify(WORKER)});`);
 await G.goto(glink, { waitUntil: 'networkidle' }); await wait(600);
-check(/Who are you/.test(await G.locator('#g').innerText()), 'member sees the name picker');
+check(!/Who are you/.test(await G.locator('#g').innerText()) && /tap it to add your address/i.test(await G.locator('#g').innerText()), 'member lands straight on the schedule (no name picker)');
 await shot(G, '5-group-picker');
 const s0 = await server();
 // the member is whoever hosts the second upcoming week; the swap partner hosts a later week (picked from the data, no names in the repo)
@@ -63,13 +63,13 @@ const fut = s0.meetings.filter(m => m.date >= TODAY && m.status === 'on' && !m.l
 const nellieMeet = fut[1];
 const nellie = s0.people.find(p => p.householdId === nellieMeet.hostHouseholdId && p.active !== false);
 const partnerH = fut[fut.length - 2].hostHouseholdId;
-await G.locator('#pickSearch').fill(nellie.name.slice(0, 4).toLowerCase()); await G.locator(`[data-act="iam"][data-id="${nellie.id}"]`).click(); await wait(300);
-let gt = await G.locator('#g').innerText();
-check(/Your turn to host/i.test(gt), 'your-turn card shown');
+await G.locator(`#g [data-act="hh"][data-id="${nellie.householdId}"]`).first().click(); await wait(300);
+let gt = await G.locator('#sheetBody').innerText();
+check(/Hosting/.test(gt) && /Address/i.test(gt), 'tapping a name opens their address + hosting week');
 console.log('MEMBER TURN:', gt.split('\n').slice(0, 8).join(' | '));
 await shot(G, '6-group-main');
 check(await G.locator('[data-act="editmeeting"], [data-act="addevent"], .tabbar').count() === 0, 'member page has no editing of the calendar');
-await G.locator('#myAddr').fill('100 Test Ave, Minneapolis'); await G.locator('[data-act="saveaddr"]').click(); await wait(800);
+await G.locator('#hAddr').fill('100 Test Ave, Minneapolis'); await G.locator('#sheetFoot .btn.primary').click(); await wait(800);
 let s1 = await server();
 check(s1.households.find(h => h.id === nellie.householdId).address === '100 Test Ave, Minneapolis', 'member address saved to the cloud');
 
@@ -87,7 +87,7 @@ check(await L.evaluate(id => window.__bs.state.households.find(h => h.id === id)
 
 // member swap
 await G.locator('#gRefresh').click(); await wait(800);
-await G.locator('[data-act="swap"]').click(); await wait(300);
+await G.locator(`#g [data-act="hh"][data-id="${nellie.householdId}"]`).first().click(); await wait(300); await G.locator('#hSwap').click(); await wait(300);
 await shot(G, '7-group-swap');
 const bak = s2.households.find(h => h.id === partnerH);
 await G.locator(`#sheetBody [data-to="${bak.id}"]`).click(); await wait(200);
@@ -128,6 +128,33 @@ await L.locator('[data-act="addperson"]').click(); await wait(200);
 await shot(L, '11-add-person');
 await L.locator('#sheetClose').click();
 
+
+// calendar views follow the list: swap, address, removal
+const calCell = async (page, date) => page.locator('.cal [data-act="calday"]').filter({ has: page.locator('.num', { hasText: new RegExp('^' + Number(date.slice(8)) + '$') }) }).first().innerText();
+const goMonth = async (page, date) => { const want = new Date(date + 'T12:00').toLocaleString('en-US', { month: 'long', year: 'numeric' }); for (let i = 0; i < 8; i++) { const h = await page.locator('.cal .nav h3').innerText(); if (h === want) return; const dir = new Date(date + 'T12:00') > new Date(h + ' 15') ? 1 : -1; await page.locator(`.cal [data-act="calnav"][data-dir="${dir}"]`).click(); await wait(150); } };
+await G.locator('[data-act="view"][data-v="cal"]').click(); await wait(300);
+await goMonth(G, nellieMeet.date);
+const cellG = await calCell(G, nellieMeet.date);
+check(/\S/.test(cellG) && !/No host/.test(cellG), `group calendar cell ${nellieMeet.date}: ${cellG.replace(/\n/g, ' ')}`);
+await shot(G, '12-group-calendar');
+await L.locator('.tabbar [data-tab="calendar"]').click(); await wait(300);
+await goMonth(L, nellieMeet.date);
+const cellL = await calCell(L, nellieMeet.date);
+check(cellL === cellG, `leader calendar shows the same host on ${nellieMeet.date} (${cellL.replace(/\n/g, ' ')})`);
+await shot(L, '13-leader-calendar');
+// leader removes the person hosting a later single-person week; both calendars re-plan
+const s4 = await server();
+const later = s4.meetings.filter(m => m.date > nellieMeet.date && m.hostMode === 'auto' && m.hostHouseholdId).sort((a, b) => a.date < b.date ? -1 : 1).find(m => s4.people.filter(p => p.householdId === m.hostHouseholdId).length === 1);
+const victim = s4.people.find(p => p.householdId === later.hostHouseholdId);
+await L.locator('.tabbar [data-tab="people"]').click(); await wait(200);
+await L.locator(`[data-act="editperson"][data-id="${victim.id}"]`).click(); await wait(200);
+await L.locator('#sheetFoot .btn.danger').click(); await wait(200); await L.locator('#sheetFoot .btn.danger').click(); await wait(2500);
+const s5 = await server();
+check(s5.meetings.find(m => m.id === later.id).hostHouseholdId !== later.hostHouseholdId, `removing a person re-plans ${later.date} in the cloud`);
+await G.locator('#gRefresh').click(); await wait(900);
+await goMonth(G, later.date);
+const cellAfter = await calCell(G, later.date);
+check(!cellAfter.includes(victim.name.split(' ')[0]), `group calendar no longer shows the removed person on ${later.date} (${cellAfter.replace(/\n/g, ' ')})`);
 console.log('\nerrors:', errors.length ? errors.join('\n') : 'none');
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nall passed');
 await browser.close();

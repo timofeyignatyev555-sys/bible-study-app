@@ -63,3 +63,9 @@ Today a PUT with a newer `updatedAt` overwrites the stored copy, so a member's c
 
 - Phones on the group page so members can reach each other?
 - Should members be able to say "unavailable until" themselves, or stays Tim-only?
+
+## Revision (same day, Tim's feedback)
+
+- **No name picker.** Members land straight on the schedule. They scroll to their name, tap it, and a sheet opens with their hosting week, their address (edit + save) and "Can't host <date>?" (the swap flow, recorded in that household's name). Every household is tappable: scheduled weeks, next in line, and "Not hosting right now".
+- **Calendar.** Both pages get a month calendar (`js/calgrid.js`, shared): each meeting day shows the host's short name (surname for siblings, first name otherwise) or the event, with a dot when the address is missing. It is built from the same data as the lists, so swaps, new or removed people and address changes show up in both at once. Group page: "Hosting list | Calendar" toggle. Leader Calendar tab: "Month | List".
+- **Light theme by default** on both pages; dark and "auto" (follow the phone) stay in Settings.

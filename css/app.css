@@ -1,20 +1,22 @@
 :root{
+  --ground:#FAF8F4; --surface:#FFFFFF; --surface-2:#F3F0EA; --surface-3:#E9E5DD; --rule:#DED9CF; --rule-2:#ECE8E1;
+  --ink:#1D1F24; --ink-2:#50535A; --ink-3:#80838A;
+  --accent:#B26F0C; --accent-ink:#FFFFFF; --accent-soft:#FBEFD9;
+  --ok:#2E8B5E; --ok-soft:#DFF2E7; --warn:#A8670B; --warn-soft:#FDF1DC; --crit:#B7433A; --crit-soft:#FBE5E2; --info:#2C6DBF; --info-soft:#E3EDFA;
+  --shadow:0 1px 2px rgba(26,28,32,.05),0 10px 28px -18px rgba(26,28,32,.22);
+  --sans:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --serif:"Literata",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --tabh:64px;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
   --ground:#101418; --surface:#181D23; --surface-2:#1F252C; --surface-3:#272E37; --rule:#2B323B; --rule-2:#232930;
   --ink:#EDE9E0; --ink-2:#B4AFA5; --ink-3:#7F7B73;
   --accent:#E3A93E; --accent-ink:#1A1408; --accent-soft:#2F2612;
   --ok:#4CBB8A; --ok-soft:#16302A; --warn:#E3A93E; --warn-soft:#2E2512; --crit:#E06B5F; --crit-soft:#33201D; --info:#5A9BE6; --info-soft:#1B2836;
   --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 32px -18px rgba(0,0,0,.9);
-  --sans:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
-  --serif:"Literata",Georgia,"Times New Roman",serif;
-  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  --tabh:64px;
-}
-:root[data-theme="light"]{
-  --ground:#F4F2EC; --surface:#FFFFFF; --surface-2:#ECE9E2; --surface-3:#E2DED5; --rule:#D8D4CB; --rule-2:#E6E2DA;
-  --ink:#1A1C20; --ink-2:#4C4F55; --ink-3:#7D7F86;
-  --accent:#B9791A; --accent-ink:#1A1C20; --accent-soft:#F4E7CF;
-  --ok:#2E8B5E; --ok-soft:#DCEFE4; --warn:#B9791A; --warn-soft:#F4E7CF; --crit:#B7433A; --crit-soft:#F6E1DE; --info:#2C6DBF; --info-soft:#DFE9F7;
-  --shadow:0 1px 2px rgba(26,28,32,.06),0 12px 32px -18px rgba(26,28,32,.25);
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;height:100%}
@@ -100,8 +102,6 @@ section{display:flex;flex-direction:column;gap:10px}
 .field label{font-size:.8rem;color:var(--ink-2);font-weight:600}
 .field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:1rem;min-height:44px}
 .field textarea{min-height:80px;resize:vertical}
-.field input[type="date"],.field input[type="time"]{color-scheme:dark}
-:root[data-theme="light"] .field input[type="date"],:root[data-theme="light"] .field input[type="time"]{color-scheme:light}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .seg{display:flex;background:var(--surface-2);border:1px solid var(--rule);border-radius:10px;padding:3px;gap:3px}
 .seg button{flex:1;border:none;background:none;border-radius:8px;padding:8px 6px;font-size:.86rem;font-weight:600;color:var(--ink-2);min-height:38px}
@@ -114,9 +114,9 @@ section{display:flex;flex-direction:column;gap:10px}
 .check .sub{color:var(--ink-3);font-size:.8rem}
 
 /* sheet */
-.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;display:none}
+.backdrop{position:fixed;inset:0;background:rgba(20,22,26,.4);z-index:40;display:none}
 .backdrop.on{display:block}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--rule);max-height:92vh;max-height:92dvh;display:none;flex-direction:column;overflow:hidden;box-shadow:0 -10px 40px rgba(0,0,0,.5)}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--surface);border-radius:18px 18px 0 0;border-top:1px solid var(--rule);max-height:92vh;max-height:92dvh;display:none;flex-direction:column;overflow:hidden;box-shadow:0 -10px 40px rgba(0,0,0,.18)}
 .sheet.on{display:flex}
 .sheet .grab{width:40px;height:4px;background:var(--rule);border-radius:2px;margin:10px auto 0}
 .sheet .head{display:flex;justify-content:space-between;align-items:center;padding:10px 16px 8px}
@@ -169,5 +169,24 @@ details.adv summary{cursor:pointer;color:var(--ink-2);font-size:.88rem;padding:6
 .row.mine{background:var(--accent-soft)}
 .card.turn{border-color:var(--accent);background:linear-gradient(180deg,var(--accent-soft) 0%,var(--surface) 70%)}
 .card.turn .big{font-family:var(--serif);font-size:1.45rem;font-weight:700;margin-top:4px}
-.picker .row{min-height:48px}
+.warn-text{color:var(--warn)}
 kbd{font-family:var(--mono);font-size:.8rem;background:var(--surface-3);padding:2px 6px;border-radius:5px}
+
+/* month calendar (leader Calendar tab + group page) */
+.cal{background:var(--surface);border:1px solid var(--rule-2);border-radius:14px;box-shadow:var(--shadow);padding:10px 8px 8px}
+.cal .nav{display:flex;align-items:center;justify-content:space-between;padding:0 4px 8px}
+.cal .nav h3{font-size:1.1rem}
+.cal .grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.cal .dow{font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:center;padding:2px 0 4px}
+.cal .day{min-height:58px;border-radius:9px;padding:4px 3px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:.8rem;color:var(--ink-2);background:none;border:1px solid transparent;min-width:0}
+.cal .day.blank{visibility:hidden}
+.cal .day .num{font-weight:600;font-variant-numeric:tabular-nums}
+.cal .day.today .num{background:var(--ink);color:var(--surface);border-radius:999px;min-width:22px;padding:0 5px}
+.cal .day.meet{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--ink);cursor:pointer}
+.cal .day.meet.event{background:var(--info-soft);border-color:var(--info-soft)}
+.cal .day.meet.off{background:var(--surface-2);border-color:var(--surface-2);color:var(--ink-3)}
+.cal .day.meet.past{opacity:.55}
+.cal .day .hn{margin:0;font-size:.7rem;font-weight:700;line-height:1.2;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.01em}
+.cal .day .noaddr{width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.cal .legend{display:flex;flex-wrap:wrap;gap:12px;padding:8px 4px 2px;font-size:.74rem;color:var(--ink-3)}
+.cal .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
