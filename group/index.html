@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101418">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bible Study">
+<meta name="robots" content="noindex">
+<meta name="description" content="Hosting schedule and calendar for the Friday Bible study.">
+<title>Bible Study · Hosting</title>
+<!-- no manifest on purpose: "Add to Home Screen" then keeps the ?k= link -->
+<link rel="icon" href="../icons/icon-192.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Literata:opsz,wght@7..72,600;7..72,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/app.css">
+<style>body{padding-bottom:calc(32px + env(safe-area-inset-bottom))} .toast{bottom:calc(24px + env(safe-area-inset-bottom))}</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div><h1 id="gName">Bible Study</h1><div class="sub"><span class="dot" id="gDot"></span><span id="gStatus">loading</span></div></div>
+    <div class="right"><button class="btn sm ghost" id="gRefresh">Refresh</button></div>
+  </header>
+  <main id="g" class="panel on"></main>
+</div>
+<div class="backdrop" id="backdrop"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <div class="head"><h2 id="sheetTitle"></h2><button class="btn sm ghost" id="sheetClose">Close</button></div>
+  <div class="body" id="sheetBody"></div>
+  <div class="foot hidden" id="sheetFoot"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script type="module" src="../js/group.js"></script>
+</body>
+</html>

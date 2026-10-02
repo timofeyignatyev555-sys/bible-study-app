@@ -142,6 +142,47 @@ export function fillSeason(state) {
   return added;
 }
 
+// Display name for a household: "Anna & David (Bak)" when siblings share it, the person's name otherwise.
+export function householdLabel(state, h) {
+  if (!h) return '';
+  const names = state.people.filter(p => p.householdId === h.id && p.active !== false).map(p => p.name);
+  if (names.length < 2) return h.name;
+  const surname = /\s/.test(h.name.trim()) ? names[0].trim().split(/\s+/).pop() : h.name.trim();
+  return `${names.map(n => n.trim().split(/\s+/)[0]).join(' & ')} (${surname})`;
+}
+
+// Households waiting for a turn after everything already planned: in line order, able to host at some point.
+export function nextInLine(state, today) {
+  const planned = new Set(state.meetings.filter(m => !isPast(m, today) && countsAsHost(m)).map(m => m.hostHouseholdId));
+  const byId = Object.fromEntries(state.households.map(h => [h.id, h]));
+  return currentQueue(state, today).filter(id => !planned.has(id) && byId[id].hostStatus !== 'never' && !(byId[id].hostStatus === 'unavailable' && !byId[id].unavailableUntil));
+}
+
+// "Someone else hosts this week". Mutates state.meetings; the caller re-plans afterwards.
+// If the new household already has a later (or earlier) week planned, the two trade weeks and both are pinned.
+// Otherwise the new household is pinned here and the original host takes the next open week, like "can't host".
+export function reassignHost(state, meetingId, toId, today) {
+  const m = state.meetings.find(x => x.id === meetingId);
+  if (!m) return { error: 'That week no longer exists.' };
+  if (isPast(m, today)) return { error: 'That week is already over.' };
+  if (m.status !== 'on') return { error: 'There is no meeting that week.' };
+  if (m.location) return { error: 'That week is not at someone’s home.' };
+  const to = liveHouseholds(state).find(h => h.id === toId);
+  if (!to) return { error: 'Pick someone from the group.' };
+  if (to.hostStatus === 'never') return { error: 'They are marked as never hosting.' };
+  const from = m.hostHouseholdId;
+  if (from === toId) return { error: 'They already host that week.' };
+  const other = from ? sortMeetings(state.meetings).find(x => x.id !== m.id && !isPast(x, today) && countsAsHost(x) && x.hostHouseholdId === toId) : null;
+  m.hostHouseholdId = toId; m.hostMode = 'pinned';
+  m.skipped = (m.skipped || []).filter(id => id !== toId);
+  if (other) {
+    other.hostHouseholdId = from; other.hostMode = 'pinned';
+    other.skipped = (other.skipped || []).filter(id => id !== from);
+    return { kind: 'trade', from, to: toId, date: m.date, otherDate: other.date };
+  }
+  return { kind: 'cover', from, to: toId, date: m.date };
+}
+
 // Deterministic shuffle helper (Fisher-Yates with an injectable rng) used by the seed and the Hosting tab.
 export function shuffle(arr, rng = Math.random) {
   const a = [...arr];

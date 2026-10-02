@@ -152,4 +152,22 @@ details.adv summary{cursor:pointer;color:var(--ink-2);font-size:.88rem;padding:6
 .pill-row{display:flex;flex-wrap:wrap;gap:6px}
 .pill{border:1px solid var(--rule);background:var(--surface-2);color:var(--ink-2);border-radius:999px;padding:5px 10px;font-size:.82rem;font-weight:600}
 .pill[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-soft)}
+/* hosting: who + where, used by the hero, the week sheet and the group page */
+.who{display:flex;align-items:baseline;gap:10px;margin-top:8px}
+.who .lbl{font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);flex:none}
+.who .host{font-size:1.2rem;font-weight:700;margin:0}
+.evt{color:var(--info);font-weight:600;margin-top:6px}
+.sheet-hero .addr{color:var(--ink-2);font-size:.95rem;margin-top:2px}
+.sheet-hero .addr a{color:var(--info);text-decoration:none}
+.sheet-hero .who{margin-top:0}
+.row .s.wrap{white-space:normal}
+.row .s.warn{color:var(--warn)}
+.linkbtn{background:none;border:none;padding:0;color:var(--accent);font-weight:600;font-size:.88rem;text-decoration:underline;text-underline-offset:3px;text-align:left}
+.top .right .btn{color:var(--ink-2)}
+.notice.between{align-items:center}
+.you{display:inline-block;font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--accent);color:var(--accent-ink)}
+.row.mine{background:var(--accent-soft)}
+.card.turn{border-color:var(--accent);background:linear-gradient(180deg,var(--accent-soft) 0%,var(--surface) 70%)}
+.card.turn .big{font-family:var(--serif);font-size:1.45rem;font-weight:700;margin-top:4px}
+.picker .row{min-height:48px}
 kbd{font-family:var(--mono);font-size:.8rem;background:var(--surface-3);padding:2px 6px;border-radius:5px}

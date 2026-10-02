@@ -1,6 +1,7 @@
 // Generator tests. Run: node tools/test.mjs
 import assert from 'node:assert/strict';
-import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle } from '../js/rotation.js';
+import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, householdLabel, reassignHost, nextInLine } from '../js/rotation.js';
+import { merge3 } from '../js/store.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok  ' + name); };
 
@@ -101,5 +102,62 @@ t('fillSeason adds only missing weeks', () => {
 t('shuffle keeps every element', () => {
   let i = 0; const rng = () => ((i += 7) % 10) / 10;
   assert.deepEqual([...shuffle(['a', 'b', 'c', 'd'], rng)].sort(), ['a', 'b', 'c', 'd']);
+});
+const replanned = s => { s.meetings = plan(s, TODAY).meetings; return s; };
+t('label: siblings show first names and surname', () => {
+  const s = { people: [{ id: 'p1', name: 'Anna Smith', householdId: 'h', active: true }, { id: 'p2', name: 'Maria Smith', householdId: 'h', active: true }, { id: 'p3', name: 'Liza Dumyan', householdId: 'l', active: true }], households: [] };
+  assert.equal(householdLabel(s, { id: 'h', name: 'Smith' }), 'Anna & Maria (Smith)');
+  assert.equal(householdLabel(s, { id: 'l', name: 'Liza Dumyan' }), 'Liza Dumyan');
+  s.people.push({ id: 'p4', name: 'Anna Dumyan', householdId: 'l', active: true });
+  assert.equal(householdLabel(s, { id: 'l', name: 'Liza Dumyan' }), 'Liza & Anna (Dumyan)');
+  s.people[3].active = false;
+  assert.equal(householdLabel(s, { id: 'l', name: 'Liza Dumyan' }), 'Liza Dumyan');
+});
+t('someone else hosts: a scheduled household trades weeks, both pinned', () => {
+  const s = replanned(mk(['A', 'B', 'C', 'D']));
+  const r = reassignHost(s, 'm1', 'C', TODAY);
+  assert.equal(r.kind, 'trade'); assert.equal(r.otherDate, D[2]);
+  assert.deepEqual(hosts(replanned(s)), ['C', 'B', 'A', 'D', 'C', 'B']);
+  assert.equal(s.meetings[0].hostMode, 'pinned'); assert.equal(s.meetings[2].hostMode, 'pinned');
+});
+t('someone else hosts: an unscheduled household covers, the original host takes next week', () => {
+  const s = replanned(mk(['A', 'B', 'C', 'D', 'E', 'F', 'G']));
+  assert.deepEqual(nextInLine(s, TODAY), ['G']);
+  const r = reassignHost(s, 'm1', 'G', TODAY);
+  assert.equal(r.kind, 'cover');
+  assert.deepEqual(hosts(replanned(s)), ['G', 'A', 'B', 'C', 'D', 'E']);
+  assert.deepEqual(nextInLine(s, TODAY), ['F']);
+});
+t('someone else hosts: rejects past weeks, off weeks, same host, never-hosts', () => {
+  const s = replanned(mk(['A', 'B', 'C', 'D'], { 2: { status: 'off' } }));
+  assert.ok(reassignHost(s, 'm1', 'A', TODAY).error);
+  assert.ok(reassignHost(s, 'm2', 'C', TODAY).error);
+  assert.ok(reassignHost(s, 'm1', 'C', D[1]).error);
+  s.households[3].hostStatus = 'never';
+  assert.ok(reassignHost(s, 'm1', 'D', TODAY).error);
+  assert.ok(reassignHost(s, 'm1', 'nope', TODAY).error);
+});
+t('merge3: each side keeps its own edits, server adds survive, local deletes stick', () => {
+  const base = replanned(mk(['A', 'B', 'C', 'D'])); base.log = [];
+  const local = JSON.parse(JSON.stringify(base)), server = JSON.parse(JSON.stringify(base));
+  local.meetings[3].topic = 'Romans 8'; local.households[0].note = 'gate code';
+  server.households[1].address = '1 Main St'; server.households[0].address = '9 Elm';
+  server.log.push({ id: 'l1', at: '2026-09-19T00:00:00Z', by: 'B', text: 'address' });
+  reassignHost(server, 'm1', 'C', TODAY); server.meetings = plan(server, TODAY).meetings;
+  server.people.push({ id: 'pE', name: 'PE', householdId: 'E', active: true }); server.households.push({ id: 'E', name: 'E', address: '', hostStatus: 'available', unavailableUntil: null });
+  local.people = local.people.filter(p => p.id !== 'pD');
+  const m = merge3(base, local, server, TODAY);
+  assert.equal(m.meetings[3].topic, 'Romans 8'); assert.equal(m.households[0].note, 'gate code');
+  assert.equal(m.households[0].address, '9 Elm'); assert.equal(m.households[1].address, '1 Main St');
+  assert.equal(m.meetings[0].hostHouseholdId, 'C'); assert.equal(m.meetings[0].hostMode, 'pinned');
+  assert.equal(m.meetings[1].hostHouseholdId, null);
+  assert.ok(m.people.some(p => p.id === 'pE')); assert.ok(!m.people.some(p => p.id === 'pD'));
+  assert.equal(m.log.length, 1);
+});
+t('merge3: same field edited on both sides, this device wins', () => {
+  const base = mk(['A', 'B']); base.log = [];
+  const local = JSON.parse(JSON.stringify(base)), server = JSON.parse(JSON.stringify(base));
+  local.households[0].address = 'mine'; server.households[0].address = 'theirs';
+  assert.equal(merge3(base, local, server, TODAY).households[0].address, 'mine');
 });
 console.log(`\n${n} tests passed`);
