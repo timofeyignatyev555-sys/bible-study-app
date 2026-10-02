@@ -80,7 +80,8 @@ function render() {
   let html = renderThisWeek() + `<div class="notice info">Find your name and tap it to add your address and phone. Can't host your week, or need a break from hosting? Tap your name too.</div>
     <div class="seg"><button data-act="view" data-v="list" aria-pressed="${view === 'list'}">Hosting list</button><button data-act="view" data-v="cal" aria-pressed="${view === 'cal'}">Calendar</button></div>`;
   html += view === 'cal' ? renderCalendar() : renderSchedule();
-  if (g.log && g.log.length) html += `<section><h2>Recent changes</h2><div class="list">${g.log.slice().reverse().slice(0, 5).map(e => `<div class="row"><div class="main"><div class="t" style="font-weight:500">${esc(e.text)}</div><div class="s">${fmtStamp(e.at)}</div></div></div>`).join('')}</div></section>`;
+  // collapsed like "Earlier weeks"; stays open across refreshes once opened
+  if (g.log && g.log.length) html += `<details class="adv" id="recent" ${pref('recentOpen') ? 'open' : ''}><summary>Recent changes (${Math.min(5, g.log.length)})</summary><div class="list" style="margin-top:8px">${g.log.slice().reverse().slice(0, 5).map(e => `<div class="row"><div class="main"><div class="t" style="font-weight:500">${esc(e.text)}</div><div class="s">${fmtStamp(e.at)}</div></div></div>`).join('')}</div></details>`;
   main.innerHTML = html;
 }
 
@@ -228,6 +229,7 @@ document.addEventListener('click', e => {
   else if (a === 'calnav') { calMonth = shiftMonth(calMonth, +b.dataset.dir); render(); }
   else if (a === 'view') { pref('view', b.dataset.v); render(); }
 });
+document.addEventListener('toggle', e => { if (e.target.id === 'recent') pref('recentOpen', e.target.open ? '1' : null); }, true);
 $('#gRefresh').addEventListener('click', () => { netState = 'loading'; render(); refresh(false); });
 $('#sheetClose').addEventListener('click', closeSheet); $('#backdrop').addEventListener('click', closeSheet);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !document.body.classList.contains('modal')) refresh(true); });
