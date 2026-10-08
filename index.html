@@ -26,8 +26,8 @@
 
   <div id="connect" class="connect hidden">
     <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v16H6.5A2.5 2.5 0 0 0 4 21z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v16h5.5a2.5 2.5 0 0 1 2.5 2z"/></svg></div>
-    <div><h2>Connect this device</h2><p class="muted" style="margin-top:6px">Open your setup link on this phone or laptop, or paste the sync token. Your roster and schedule are stored privately and stay in sync between devices.</p></div>
-    <div class="field"><label for="tokenIn">Sync token</label><input id="tokenIn" type="password" autocomplete="off" placeholder="paste token"></div>
+    <div><h2>Connect this device</h2><p class="muted" style="margin-top:6px">On a device that is already connected, open Settings, tap Connect another device, and type the 8-character code it shows. Your roster and schedule are stored privately and stay in sync between devices.</p></div>
+    <div class="field"><label for="tokenIn">Setup code</label><input id="tokenIn" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="8-character code, or paste the sync token"></div>
     <div class="err hidden" id="tokenErr"></div>
     <div class="btn-row"><button class="btn primary" id="tokenGo">Connect</button></div>
     <details class="adv"><summary>Use without sync</summary><p class="dim" style="margin:6px 0 10px">Everything stays in this browser only. You can connect later from Settings.</p><button class="btn" id="startLocal">Start on this device only</button></details>

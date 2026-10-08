@@ -7,10 +7,11 @@ Phone-first PWA for leading a weekly Bible study: roster, week-by-week calendar,
 - `sw.js`, `manifest.webmanifest`, `icons/`: offline shell + home-screen install. Bump `VERSION` in `sw.js` and `js/app.js` on every deploy.
 - `tools/test.mjs`: generator, swap and merge tests (`node tools/test.mjs`).
 - `tools/e2e-local.mjs`: drives the leader app and the group page together in a phone-sized headless Chrome against a local `wrangler dev` (never the live worker; it writes).
+- `tools/e2e-pair.mjs`: the one-time setup code flow (new device types a code instead of pasting the token) against a local worker.
 - `tools/make-icons.mjs`: renders the PNG icons (`node tools/make-icons.mjs [admin|members]`). The leader app is "Bible Admin" with a gold tile + gear (`tools/icon-admin.html`); the group page keeps "Bible Study" and the dark tile (`tools/icon.html`).
 - `docs/superpowers/specs/`: design specs.
 
-Data lives in the browser (localStorage) and is mirrored to a private Cloudflare Worker + KV (`bible-study-sync`, separate repo) behind a token entered once per device. Members reach the same copy through the group key, which only exposes hosting + calendar. Pushes carry the server copy they were built on, and the app merges field by field when a member changed something in between. No names or addresses are in this repo.
+Data lives in the browser (localStorage) and is mirrored to a private Cloudflare Worker + KV (`bible-study-sync`, separate repo) behind a token entered once per device. A new device does not need the token pasted: on a connected device tap Settings > Sync > Connect another device, and type the 8-character code it shows (the worker trades a live code for the token; it works once, expires, and five wrong tries cancel it). Members reach the same copy through the group key, which only exposes hosting + calendar. Pushes carry the server copy they were built on, and the app merges field by field when a member changed something in between. No names or addresses are in this repo.
 
 The leader app is also served from its own address, `https://bible-admin.pages.dev` (Cloudflare Pages project `bible-admin`; `node tools/build-admin.mjs && npx wrangler pages deploy dist-admin --project-name bible-admin --branch main`), which is what goes on the Home Screen; the github.io copy updates on `git push`.
 

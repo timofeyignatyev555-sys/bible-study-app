@@ -80,6 +80,15 @@ export async function verify(t) {
   return { ok: true, state: data.state };
 }
 
+// Setup codes: the connected device asks for a short one-time code; the new device trades it for the token (nothing long to copy or paste).
+export const pairStart = () => call('/admin/pair', 'POST', {});
+export async function claimCode(code) {
+  const res = await fetch(WORKER_URL + '/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.token) throw Object.assign(new Error(data.error || 'That code did not work.'), { code: 'badcode', left: data.left });
+  return data.token;
+}
+
 // The link Tim shares with the group. The key lives in the worker so it can be reset from here.
 export async function groupLink(reset = false) {
   const r = await call(reset ? '/admin/group-key/reset' : '/admin/group-key', reset ? 'POST' : 'GET');
