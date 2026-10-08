@@ -5,9 +5,10 @@ import * as store from './store.js';
 import * as sync from './sync.js';
 import { calendarHTML, shortName, shiftMonth, startMonth } from './calgrid.js';
 
-const VERSION = '1.4.0';
+const VERSION = '2.0.0';
 let state = null;
-let tab = 'week';
+let tab = 'home'; // home | settings
+let view = null;  // home body: list | cal | people (remembered per device)
 let peopleFilter = '';
 let calMonth = null; // 'YYYY-MM' shown in the month view
 
@@ -141,10 +142,10 @@ async function pullAndAdopt() {
 }
 
 function showConnect(err) {
-  $('#connect').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#tabbar').classList.add('hidden');
+  $('#connect').classList.remove('hidden'); $('#app').classList.add('hidden');
   const e = $('#tokenErr'); if (err) { e.textContent = err; e.classList.remove('hidden'); } else e.classList.add('hidden');
 }
-function showApp() { $('#connect').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#tabbar').classList.remove('hidden'); render(); }
+function showApp() { $('#connect').classList.add('hidden'); $('#app').classList.remove('hidden'); render(); }
 
 async function boot() {
   applyTheme();
@@ -170,10 +171,9 @@ function render() {
   document.title = state.settings.name || 'Bible Study';
   renderSyncStatus(sync.status);
   const u = hist('undo'), r = hist('redo');
-  $('#topRight').innerHTML = `<span class="btn-row tight">${r.length ? `<button class="btn sm ghost" data-act="redo" title="Redo ${esc(r[r.length - 1].label)}">Redo</button>` : ''}<button class="btn sm ghost" data-act="undo" ${u.length ? '' : 'disabled'} title="${esc(u.length ? 'Undo ' + u[u.length - 1].label : 'Nothing to undo')}">Undo</button></span>`;
-  document.querySelectorAll('.tabbar button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  $('#topRight').innerHTML = `<span class="btn-row tight">${r.length ? `<button class="btn sm ghost" data-act="redo" title="Redo ${esc(r[r.length - 1].label)}">Redo</button>` : ''}<button class="btn sm ghost" data-act="undo" ${u.length ? '' : 'disabled'} title="${esc(u.length ? 'Undo ' + u[u.length - 1].label : 'Nothing to undo')}">Undo</button>${tab === 'home' ? `<button class="btn sm ghost icon" data-act="tab" data-tab="settings" aria-label="Settings"><svg class="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>` : `<button class="btn sm primary" data-act="tab" data-tab="home">Done</button>`}</span>`;
   document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + tab));
-  ({ week: renderWeek, calendar: renderCalendar, people: renderPeople, hosting: renderHosting, settings: renderSettings })[tab]();
+  ({ home: renderHome, settings: renderSettings })[tab]();
 }
 function renderSyncStatus(s) {
   const dot = $('#syncDot'), txt = $('#syncText');
@@ -194,7 +194,7 @@ function chipsFor(m) {
   return c.join('');
 }
 
-function renderWeek() {
+function heroHTML() {
   const t = today();
   const upcoming = sorted().filter(m => m.date >= t);
   const next = upcoming[0];
@@ -222,17 +222,22 @@ function renderWeek() {
       ${next.status === 'on' ? `<button class="linkbtn" style="margin-top:10px" data-act="copy" data-id="${next.id}">Copy details for the group chat</button>` : ''}
     </div>`;
   }
-  const soon = upcoming.slice(1, 5);
   const missing = upcoming.slice(0, 5).filter(m => isHome(m) && m.hostHouseholdId && !whereAddr(m)).length;
-  if (missing) html += `<div class="notice between"><span>${missing} of the next ${Math.min(5, upcoming.length)} hosts ${missing === 1 ? 'has' : 'have'} no address yet. The group link lets them add it.</span><button class="btn sm" data-act="sharegroup">Share link</button></div>`;
-  if (soon.length) {
-    html += `<section><div class="sec-head"><h2>Next weeks</h2><button class="btn sm ghost" data-act="tab" data-tab="hosting">All hosting</button></div><div class="list">` +
-      soon.map(m => rowMeeting(m)).join('') + `</div></section>`;
-  }
-  const since = new Date(Date.now() - 14 * 864e5).toISOString();
-  const news = (state.log || []).filter(e => e.at >= since).slice(-5).reverse();
-  if (news.length) html += `<section><h2>From the group</h2><div class="list">${news.map(e => `<div class="row"><div class="main"><div class="t" style="font-weight:500">${esc(e.text)}</div><div class="s">${fmtStamp(e.at)}</div></div></div>`).join('')}</div></section>`;
-  $('#p-week').innerHTML = html;
+  if (missing) html += `<div class="notice">${missing} of the next ${Math.min(5, upcoming.length)} hosts ${missing === 1 ? 'has' : 'have'} no address yet. Share the group link so they can add it.</div>`;
+  return html;
+}
+
+// The admin home: the same layout the group sees (this week, hosting list, calendar) plus the leader's tools.
+function renderHome() {
+  if (!view) view = store.getPref('view') || 'list';
+  const log = (state.log || []).slice(-8).reverse();
+  let html = heroHTML();
+  html += `<div class="btn-row admin-actions"><button class="btn" data-act="addperson">+ Add people</button><button class="btn" data-act="addevent">+ Add event</button><button class="btn" data-act="sharegroup">Share link</button></div>
+  <div class="seg">${[['list', 'Hosting list'], ['cal', 'Calendar'], ['people', 'People']].map(([k, l]) => `<button data-act="view" data-v="${k}" aria-pressed="${view === k}">${l}</button>`).join('')}</div>
+  <div id="viewBody" class="stack" style="gap:20px"></div>`;
+  if (log.length) html += `<details class="adv" id="recentA" ${store.getPref('recentOpen') ? 'open' : ''}><summary>Recent changes from the group (${log.length})</summary><div class="list" style="margin-top:8px">${log.map(e => `<div class="row"><div class="main"><div class="t" style="font-weight:500">${esc(e.text)}</div><div class="s">${fmtStamp(e.at)}</div></div></div>`).join('')}</div></details>`;
+  $('#p-home').innerHTML = html;
+  ({ list: renderHosting, cal: renderCalendar, people: renderPeople })[view]();
 }
 
 function rowMeeting(m, opts = {}) {
@@ -258,39 +263,23 @@ function calRows() {
 }
 function renderCalendar() {
   const ms = sorted();
-  const view = store.getPref('calView') || 'month';
-  let html = `<div class="between"><h2>Calendar</h2><button class="btn sm" data-act="addevent">+ Add event</button></div>
-  <div class="seg"><button data-act="calview" data-v="month" aria-pressed="${view === 'month'}">Month</button><button data-act="calview" data-v="list" aria-pressed="${view === 'list'}">List</button></div>`;
+  let html = '';
   if (!ms.length) html += `<div class="list"><div class="empty">No meetings yet. Set the season in Settings.</div></div>`;
-  else if (view === 'month') {
+  else {
     const rows = calRows();
     if (!calMonth) calMonth = startMonth(rows, today());
     html += calendarHTML(calMonth, rows, today());
     const inMonth = ms.filter(m => m.date.slice(0, 7) === calMonth);
     html += inMonth.length ? `<div class="list">${inMonth.map(m => rowMeeting(m)).join('')}</div>` : '<p class="dim">No meetings this month.</p>';
-    html += '<p class="dim">Tap a day to change who hosts, swap, or cancel that week.</p>';
-  } else {
-    let curMonth = '';
-    let open = false;
-    for (const m of ms) {
-      const mk = m.date.slice(0, 7);
-      if (mk !== curMonth) {
-        if (open) html += '</div>';
-        curMonth = mk; const [y, mo] = parts(m.date);
-        html += `<div class="eyebrow month">${MONL[mo - 1]} ${y}</div><div class="list">`; open = true;
-      }
-      html += rowMeeting(m);
-    }
-    if (open) html += '</div>';
+    html += '<p class="dim">Tap a day to change who hosts, swap, cancel, or take attendance.</p>';
   }
-  $('#p-calendar').innerHTML = html;
+  $('#viewBody').innerHTML = html;
 }
 
 function renderPeople() {
   const st = attendanceStats(state);
   const q = peopleFilter.trim().toLowerCase();
-  let html = `<div class="between"><h2>People <span class="dim">${activePeople().length}</span></h2><button class="btn sm primary" data-act="addperson">+ Add</button></div>
-  <div class="field"><input id="peopleSearch" type="search" placeholder="Search" value="${esc(peopleFilter)}" autocomplete="off"></div>`;
+  let html = `<div class="field"><input id="peopleSearch" type="search" placeholder="Search ${activePeople().length} people" value="${esc(peopleFilter)}" autocomplete="off"></div>`;
   const rowP = p => {
     const s = st[p.id];
     return `<button class="row tap" data-act="editperson" data-id="${p.id}"><div class="avatar">${initials(p.name)}</div><div class="main"><div class="t">${esc(p.name)}${p.active === false ? '<span class="chip">inactive</span>' : ''}</div><div class="s">${esc(p.active === false ? '' : placement(p.householdId))}</div></div><div class="k">${s && s.total ? `${s.pct}%<br><span class="dim">${s.present}/${s.total}</span>` : '<span class="dim">no data</span>'}</div></button>`;
@@ -309,7 +298,7 @@ function renderPeople() {
   if (single.length) html += `<div class="list">${single.map(rowP).join('')}</div>`;
   if (inactive.length) html += `<div class="eyebrow month">Inactive</div><div class="list">${inactive.map(rowP).join('')}</div>`;
   if (!shown.length) html += `<div class="list"><div class="empty">${q ? 'No one matches.' : 'No people yet. Tap + Add.'}</div></div>`;
-  $('#p-people').innerHTML = html;
+  $('#viewBody').innerHTML = html;
   const inp = $('#peopleSearch');
   inp.addEventListener('input', () => { peopleFilter = inp.value; const pos = inp.selectionStart; renderPeople(); const n = $('#peopleSearch'); n.focus(); try { n.setSelectionRange(pos, pos); } catch {} });
 }
@@ -321,15 +310,13 @@ function renderHosting() {
   const done = ms.filter(m => isPast(m, t) && m.date < t && m.status === 'on');
   const line = nextInLine(state, t);
   const resting = liveHouseholds(state).filter(h => h.hostStatus !== 'available' && !line.includes(h.id) && !upcoming.some(m => m.hostHouseholdId === h.id)).sort((a, b) => hostLabel(a).localeCompare(hostLabel(b)));
-  const hhRow = (h, lead, sub) => `<button class="row tap" data-act="edithh" data-id="${h.id}">${lead}<div class="main"><div class="t">${esc(hostLabel(h))}</div><div class="s ${h.address ? '' : 'warn'}">${esc(sub ?? (h.address || 'no address yet'))}</div></div></button>`;
-  let html = `<div class="between"><h2>Hosting</h2><button class="btn sm primary" data-act="sharegroup">Share group link</button></div>
-  <p class="dim">Who hosts each week. Tap a week to swap or change it; tap a name in the lists below for their address and availability.</p>`;
-  html += `<section><div class="eyebrow">Schedule</div><div class="list">${upcoming.length ? upcoming.map(m => rowMeeting(m, { hosting: true })).join('') : '<div class="empty">No weeks left. Extend the season in Settings.</div>'}</div></section>`;
+  const hhRow = (h, lead, sub) => `<button class="row tap" data-act="edithh" data-id="${h.id}">${lead}<div class="main"><div class="t">${esc(hostLabel(h))}${h.hostStatus !== 'available' ? ` <span class="chip warn">${esc(hostStatusText(h))}</span>` : ''}</div><div class="s ${h.address ? '' : 'warn'}">${esc(sub ?? (h.address || 'no address yet'))}</div></div></button>`;
+  let html = `<section><div class="eyebrow">Schedule · tap a week to change it</div><div class="list">${upcoming.length ? upcoming.map(m => rowMeeting(m, { hosting: true })).join('') : '<div class="empty">No weeks left. Extend the season in Settings.</div>'}</div></section>`;
   html += `<section><div class="eyebrow">Next in line after ${upcoming.length ? fmtShort(upcoming[upcoming.length - 1].date) : 'the season'}</div><div class="list">${line.length ? line.map((id, i) => hhRow(hh(id), `<div class="n">${i + 1}</div>`)).join('') : '<div class="empty">Everyone who can host is already on the schedule.</div>'}</div>
   ${line.length > 1 ? `<button class="btn sm ghost" style="align-self:flex-start" data-act="shuffle">Shuffle this order</button>` : ''}</section>`;
-  if (resting.length) html += `<section><div class="eyebrow">Not hosting right now</div><div class="list">${resting.map(h => hhRow(h, '', [hostStatusText(h), h.note].filter(Boolean).join(' · '))).join('')}</div></section>`;
+  if (resting.length) html += `<section><div class="eyebrow">On hold / not hosting · tap a name to edit</div><div class="list">${resting.map(h => hhRow(h, '', [hostStatusText(h), h.note].filter(Boolean).join(' · '))).join('')}</div></section>`;
   if (done.length) html += `<details class="adv"><summary>Already hosted (${done.length})</summary><div class="list" style="margin-top:8px">${done.slice().reverse().map(m => rowMeeting(m, { hosting: true })).join('')}</div></details>`;
-  $('#p-hosting').innerHTML = html;
+  $('#viewBody').innerHTML = html;
 }
 
 function syncLine() {
@@ -519,7 +506,7 @@ function householdOptions(selected) {
     .map(h => `<option value="${h.id}" ${selected === h.id ? 'selected' : ''}>${esc(hostLabel(h))}</option>`).join('');
 }
 
-function personSheet(id) {
+function personSheet(id, presetHid = '') {
   const p = id ? person(id) : { id: null, name: '', phone: '', notes: '', householdId: '', active: true };
   const ownH = id ? hh(p.householdId) : null;
   const alone = ownH && state.people.filter(x => x.householdId === ownH.id).length === 1;
@@ -527,7 +514,7 @@ function personSheet(id) {
   ${id ? '' : `<div class="seg" id="pMode"><button data-v="one" aria-pressed="true">One person</button><button data-v="many" aria-pressed="false">Several at once</button></div>`}
   <div id="pOne" class="stack" style="gap:14px">
     <div class="field"><label for="pName">Name</label><input id="pName" value="${esc(p.name)}" autocomplete="off" placeholder="First and last name"></div>
-    <div class="field"><label for="pHH">Lives with</label><select id="pHH"><option value="">Nobody in the group (hosts on their own)</option>${householdOptions(id && !alone ? p.householdId : '')}</select></div>
+    <div class="field"><label for="pHH">Lives with</label><select id="pHH"><option value="">Nobody in the group (hosts on their own)</option>${householdOptions(id && !alone ? p.householdId : presetHid)}</select></div>
     <div class="field" id="pAddrWrap"><label for="pAddr">Address for hosting</label><input id="pAddr" value="${esc(alone ? ownH.address : '')}" placeholder="Street, City (optional)" autocomplete="off"></div>
     <div class="field"><label for="pPhone">Phone</label><input id="pPhone" type="tel" value="${esc(p.phone)}"></div>
     <div class="field"><label for="pNotes">Notes</label><textarea id="pNotes">${esc(p.notes)}</textarea></div>
@@ -595,10 +582,14 @@ function householdSheet(id) {
   <div class="field"><label for="hNote">Note</label><input id="hNote" value="${esc(h.note || '')}" placeholder="e.g. remodeling until December"></div>
   ${pos >= 0 ? `<div class="field"><label>Place in the hosting order</label><div class="between"><span class="muted">#${pos + 1} of ${q.length}</span><span class="btn-row tight"><button class="btn sm" id="hUp" ${pos === 0 ? 'disabled' : ''}>Earlier</button><button class="btn sm" id="hDown" ${pos === q.length - 1 ? 'disabled' : ''}>Later</button></span></div></div>` : ''}
   <div class="field"><label for="hName">Household name</label><input id="hName" value="${esc(h.name)}"><p class="dim">For siblings, use the last name; it shows as "${esc(hostLabel(h))}".</p></div>
-  <div class="list">${members(h).map(n => `<div class="row"><div class="avatar">${initials(n)}</div><div class="main"><div class="t">${esc(n)}</div></div></div>`).join('') || '<div class="empty">No active members</div>'}</div>`;
+  ${activePeople().filter(p => p.householdId === h.id).map(p => `<div class="field"><label for="hp_${p.id}">${esc(p.name.split(' ')[0])}'s phone</label><input id="hp_${p.id}" data-pid="${p.id}" class="hphone" type="tel" value="${esc(p.phone)}" placeholder="(612) 555-0123"></div>`).join('')}
+  <div class="eyebrow">Who lives here</div>
+  <div class="list">${activePeople().filter(p => p.householdId === h.id).map(p => `<button class="row tap" data-act="editperson" data-id="${p.id}"><div class="avatar">${initials(p.name)}</div><div class="main"><div class="t">${esc(p.name)}</div><div class="s">edit or remove</div></div><div class="k">›</div></button>`).join('') || '<div class="empty">No active members</div>'}</div>
+  <button class="btn ghost" data-act="addto" data-id="${h.id}">+ Add someone who lives here</button>`;
   openSheet('Household', body, [{ label: 'Save', cls: 'primary', onClick: () => {
     const mode = $('#hStatus [aria-pressed="true"]').dataset.v;
     h.name = v('hName').trim() || h.name; h.address = v('hAddr').trim(); h.note = v('hNote').trim();
+    document.querySelectorAll('#sheetBody input.hphone').forEach(i => { const p = person(i.dataset.pid); if (p) p.phone = i.value.trim(); });
     if (mode === 'never') { h.hostStatus = 'never'; h.unavailableUntil = null; }
     else {
       if (h.hostStatus === 'never') h.hostStatus = 'available';
@@ -705,8 +696,9 @@ document.addEventListener('click', e => {
   const acts = {
     tab: () => { tab = b.dataset.tab; render(); window.scrollTo(0, 0); },
     week: () => weekSheet(id), calday: () => weekSheet(id),
+    view: () => { view = b.dataset.v; store.setPref('view', view); render(); },
+    addto: () => personSheet(null, id),
     calnav: () => { calMonth = shiftMonth(calMonth, +b.dataset.dir); render(); },
-    calview: () => { store.setPref('calView', b.dataset.v); render(); },
     pickhost: () => pickHostSheet(id), canthost: () => cantHost(id),
     autohost: () => { const m = meeting(id); m.hostMode = 'auto'; closeSheet(); commit(null, 'Back to normal order'); const nm = meeting(id); toast(`${nm.hostHouseholdId ? hostLabel(hh(nm.hostHouseholdId)) : 'Nobody'} hosts ${fmtShort(nm.date)}`); },
     attendance: () => attendanceSheet(id), editmeeting: () => meetingSheet(id),
@@ -727,7 +719,7 @@ document.addEventListener('click', e => {
   if (acts[act]) acts[act]();
 });
 document.addEventListener('change', e => { if (e.target.id === 'importFile' && e.target.files[0]) importJSON(e.target.files[0]); });
-document.querySelectorAll('.tabbar button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; render(); window.scrollTo(0, 0); }));
+document.addEventListener('toggle', e => { if (e.target.id === 'recentA') store.setPref('recentOpen', e.target.open ? '1' : null); }, true);
 $('#sheetClose').addEventListener('click', closeSheet); $('#backdrop').addEventListener('click', closeSheet);
 $('#tokenGo').addEventListener('click', () => connectWith(v('tokenIn').trim(), $('#tokenErr')));
 $('#tokenIn').addEventListener('keydown', e => { if (e.key === 'Enter') connectWith(v('tokenIn').trim(), $('#tokenErr')); });

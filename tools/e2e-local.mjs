@@ -20,32 +20,38 @@ const mk = async init => {
 };
 const shot = (p, n) => p.screenshot({ path: `${SHOTS}/${n}.png`, fullPage: true });
 const wait = ms => new Promise(r => setTimeout(r, ms));
+// leader navigation: home body views (list | cal | people) or the settings screen behind the gear
+const go = async (p, v) => {
+  if (v === 'settings') { if (!(await p.locator('#p-settings.on').count())) await p.locator('[data-act="tab"][data-tab="settings"]').click(); }
+  else { if (await p.locator('#p-settings.on').count()) await p.locator('[data-act="tab"][data-tab="home"]').click(); await p.locator(`[data-act="view"][data-v="${v}"]`).click(); }
+  await wait(250);
+};
 
 // ---- leader
 const L = await mk(`if (!sessionStorage.getItem('init')) { sessionStorage.setItem('init', 1); localStorage.setItem('bs.worker', ${JSON.stringify(WORKER)}); ${WORKER.includes('localhost') ? `localStorage.setItem('bs.token', ${JSON.stringify(TOKEN)});` : ''} }`);
 await L.goto(BASE + 'index.html' + (WORKER.includes('localhost') ? '' : '#token=' + TOKEN), { waitUntil: 'networkidle' });
 await L.waitForSelector('#app:not(.hidden)', { timeout: 15000 });
 await wait(800);
-let hero = await L.locator('#p-week .hero').innerText();
+let hero = await L.locator('#p-home .hero').innerText();
 console.log('HERO:', hero.replace(/\n+/g, ' | '));
 check(/Host/i.test(hero) && /Change this week/.test(hero) && /Attendance/.test(hero), 'This Week hero has host + 2 buttons');
-check(await L.locator('#p-week .hero .btn').count() === 2, 'only two buttons on the hero');
+check(await L.locator('#p-home .hero .btn').count() === 2, 'only two buttons on the hero');
 await shot(L, '1-week');
-await L.locator('#p-week .hero [data-act="week"]').click(); await wait(300);
+await L.locator('#p-home .hero [data-act="week"]').click(); await wait(300);
 const ws = await L.locator('#sheetBody').innerText();
 check(/Someone else hosts/.test(ws) && /can't host/.test(ws) && /No meeting this week/.test(ws), 'week sheet lists the plain actions');
 await shot(L, '2-week-sheet');
 await L.locator('#sheetClose').click();
-await L.locator('.tabbar [data-tab="hosting"]').click(); await wait(300);
-const ht = await L.locator('#p-hosting').innerText();
+await go(L, 'list'); await wait(300);
+const ht = await L.locator('#viewBody').innerText();
 check(/Schedule/i.test(ht) && /Next in line/i.test(ht) && / & .+\(/.test(ht), 'hosting tab: schedule, next in line, sibling label');
-check(await L.locator('#p-hosting [data-act="move"]').count() === 0, 'no queue arrows on hosting tab');
+check(await L.locator('#viewBody [data-act="move"]').count() === 0, 'no queue arrows on hosting tab');
 await shot(L, '3-hosting');
 // group link
-await L.locator('.tabbar [data-tab="settings"]').click(); await wait(200);
+await go(L, 'settings'); await wait(200);
 await L.locator('#p-settings [data-act="copygroup"], #p-settings [data-act="sharegroup"]').first().click(); await wait(800);
 const gkey = await L.evaluate(() => localStorage.getItem('bs.groupKey'));
-check(!!gkey, 'group key fetched'); await L.locator('.tabbar [data-tab="settings"]').click(); await wait(200);
+check(!!gkey, 'group key fetched'); await go(L, 'settings'); await wait(200);
 await shot(L, '4-settings');
 const glink = await L.evaluate(() => document.querySelector('#p-settings .mono')?.textContent);
 console.log('LINK:', glink);
@@ -75,7 +81,7 @@ check(s1.households.find(h => h.id === nellie.householdId).address === '100 Test
 
 // leader makes an edit WITHOUT pulling first (conflict + merge path)
 await L.evaluate(() => { const st = window.__bs.state; });
-await L.locator('.tabbar [data-tab="people"]').click(); await wait(200);
+await go(L, 'people'); await wait(200);
 await L.locator('[data-act="addperson"]').click(); await wait(200);
 await L.locator('#pName').fill('Test Newperson'); await L.locator('#sheetFoot .btn.primary').click(); await wait(2500);
 const toastAdd = await L.locator('#toast').innerText();
@@ -102,15 +108,16 @@ check(/traded weeks/.test(s3.log.at(-1).text), 'swap logged: ' + s3.log.at(-1).t
 await shot(G, '8-group-after-swap');
 
 // leader sees it after a pull
-await L.locator('.tabbar [data-tab="week"]').click();
+await go(L, 'list');
 await L.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await wait(1500);
-const weekTxt = await L.locator('#p-week').innerText();
-check(/From the group/.test(weekTxt) && /traded weeks/.test(weekTxt), 'leader This Week shows the change from the group');
+await L.locator('#recentA summary').click(); await wait(200);
+const weekTxt = await L.locator('#p-home').innerText();
+check(/Recent changes from the group/.test(weekTxt) && /traded weeks/.test(weekTxt), 'leader This Week shows the change from the group');
 check(await L.evaluate(id => window.__bs.state.meetings.find(m => m.id === id).hostHouseholdId, nellieMeet.id) === bak.id, 'leader plan has the swap');
 await shot(L, '9-week-after');
 
 // leader changes the calendar, member sees it
-await L.locator('.tabbar [data-tab="calendar"]').click(); await wait(200);
+await go(L, 'cal'); await wait(200);
 await L.locator('[data-act="addevent"]').click(); await wait(200);
 await L.locator('#eDate').fill('2026-12-19'); await L.locator('#eTitle').fill('Christmas party'); await L.locator('#ePlace').fill('Church'); await L.locator('#sheetFoot .btn.primary').click(); await wait(2000);
 await G.locator('#gRefresh').click(); await wait(800);
@@ -118,12 +125,12 @@ gt = await G.locator('#g').innerText();
 check(/Christmas party/.test(gt), 'member sees the leader\'s new event');
 check(/Test Newperson/.test(gt), 'member sees the new person in next in line');
 // leader week sheet: someone else hosts (trade) from the app
-await L.locator('.tabbar [data-tab="hosting"]').click(); await wait(200);
-await L.locator('#p-hosting [data-act="week"]').nth(2).click(); await wait(200);
+await go(L, 'list'); await wait(200);
+await L.locator('#viewBody [data-act="week"]').nth(2).click(); await wait(200);
 await L.locator('#sheetBody [data-act="pickhost"]').click(); await wait(200);
 await shot(L, '10-pick-host');
 await L.locator('#sheetClose').click();
-await L.locator('.tabbar [data-tab="people"]').click(); await wait(200);
+await go(L, 'people'); await wait(200);
 await L.locator('[data-act="addperson"]').click(); await wait(200);
 await shot(L, '11-add-person');
 await L.locator('#sheetClose').click();
@@ -137,7 +144,7 @@ await goMonth(G, nellieMeet.date);
 const cellG = await calCell(G, nellieMeet.date);
 check(/\S/.test(cellG) && !/No host/.test(cellG), `group calendar cell ${nellieMeet.date}: ${cellG.replace(/\n/g, ' ')}`);
 await shot(G, '12-group-calendar');
-await L.locator('.tabbar [data-tab="calendar"]').click(); await wait(300);
+await go(L, 'cal'); await wait(300);
 await goMonth(L, nellieMeet.date);
 const cellL = await calCell(L, nellieMeet.date);
 check(cellL === cellG, `leader calendar shows the same host on ${nellieMeet.date} (${cellL.replace(/\n/g, ' ')})`);
@@ -146,7 +153,7 @@ await shot(L, '13-leader-calendar');
 const s4 = await server();
 const later = s4.meetings.filter(m => m.date > nellieMeet.date && m.hostMode === 'auto' && m.hostHouseholdId).sort((a, b) => a.date < b.date ? -1 : 1).find(m => s4.people.filter(p => p.householdId === m.hostHouseholdId).length === 1);
 const victim = s4.people.find(p => p.householdId === later.hostHouseholdId);
-await L.locator('.tabbar [data-tab="people"]').click(); await wait(200);
+await go(L, 'people'); await wait(200);
 await L.locator(`[data-act="editperson"][data-id="${victim.id}"]`).click(); await wait(200);
 await L.locator('#sheetFoot .btn.danger').click(); await wait(200); await L.locator('#sheetFoot .btn.danger').click(); await wait(2500);
 const s5 = await server();
@@ -184,6 +191,28 @@ await G.locator(`#g [data-act="hh"][data-id="${heldH}"]`).first().click(); await
 await G.locator('#hBack').click(); await wait(900);
 s7 = await server();
 check(s7.households.find(h => h.id === heldH).hostStatus === 'available' && s7.meetings.some(m => m.date >= TODAY && m.hostHouseholdId === heldH), 'can host again puts them back in the schedule');
+
+
+// admin home: no tab bar, household sheet edits phones + members, add someone into a household
+check(await L.locator('.tabbar').count() === 0, 'leader app has no bottom tab bar');
+await go(L, 'list');
+const lineH = await L.locator('#viewBody [data-act="edithh"]').first().getAttribute('data-id');
+await L.locator(`#viewBody [data-act="edithh"][data-id="${lineH}"]`).first().click(); await wait(300);
+const hsText = await L.locator('#sheetBody').innerText();
+check(/phone/i.test(hsText) && /Who lives here/i.test(hsText) && /Add someone who lives here/.test(hsText), 'household sheet: phones, members, add someone');
+const firstPhone = L.locator('#sheetBody input.hphone').first(); const phonePid = await firstPhone.getAttribute('data-pid');
+await firstPhone.fill('651-555-0142'); await L.locator('#sheetFoot .btn.primary').click(); await wait(2200);
+let s8 = await server();
+check(s8.people.find(p => p.id === phonePid).phone === '651-555-0142', 'admin phone edit reached the cloud');
+await L.locator(`#viewBody [data-act="edithh"][data-id="${lineH}"]`).first().click(); await wait(300);
+await L.locator('#sheetBody [data-act="addto"]').click(); await wait(300);
+check(await L.locator('#pHH').inputValue() === lineH, 'add-someone starts with "Lives with" set to that household');
+await L.locator('#pName').fill('Test Sibling'); await L.locator('#sheetFoot .btn.primary').click(); await wait(2200);
+s8 = await server();
+check(s8.people.some(p => p.name === 'Test Sibling' && p.householdId === lineH), 'new sibling joined the household in the cloud');
+await G.locator('#gRefresh').click(); await wait(900);
+check((await G.locator('#g').innerText()).includes('Test (') || (await G.locator('#g').innerText()).includes(' & Test'), 'group page shows the new sibling in the household label');
+await shot(L, '15-admin-home');
 
 console.log('\nerrors:', errors.length ? errors.join('\n') : 'none');
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nall passed');
