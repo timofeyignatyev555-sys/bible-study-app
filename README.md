@@ -7,7 +7,7 @@ Phone-first PWA for leading a weekly Bible study: roster, week-by-week calendar,
 - `sw.js`, `manifest.webmanifest`, `icons/`: offline shell + home-screen install. Bump `VERSION` in `sw.js` and `js/app.js` on every deploy.
 - `tools/test.mjs`: generator, swap and merge tests (`node tools/test.mjs`).
 - `tools/e2e-local.mjs`: drives the leader app and the group page together in a phone-sized headless Chrome against a local `wrangler dev` (never the live worker; it writes).
-- `tools/make-icons.mjs`: renders `tools/icon.html` to the PNG icons.
+- `tools/make-icons.mjs`: renders the PNG icons (`node tools/make-icons.mjs [admin|members]`). The leader app is "Bible Admin" with a gold tile + gear (`tools/icon-admin.html`); the group page keeps "Bible Study" and the dark tile (`tools/icon.html`).
 - `docs/superpowers/specs/`: design specs.
 
 Data lives in the browser (localStorage) and is mirrored to a private Cloudflare Worker + KV (`bible-study-sync`, separate repo) behind a token entered once per device. Members reach the same copy through the group key, which only exposes hosting + calendar. Pushes carry the server copy they were built on, and the app merges field by field when a member changed something in between. No names or addresses are in this repo.

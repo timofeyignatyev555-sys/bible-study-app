@@ -102,7 +102,7 @@ section{display:flex;flex-direction:column;gap:10px}
 .field label{font-size:.8rem;color:var(--ink-2);font-weight:600}
 .field input,.field select,.field textarea{width:100%;background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:1rem;min-height:44px}
 .field textarea{min-height:80px;resize:vertical}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 .seg{display:flex;background:var(--surface-2);border:1px solid var(--rule);border-radius:10px;padding:3px;gap:3px}
 .seg button{flex:1;border:none;background:none;border-radius:8px;padding:8px 6px;font-size:.86rem;font-weight:600;color:var(--ink-2);min-height:38px}
 .seg button[aria-pressed="true"]{background:var(--surface-3);color:var(--ink)}

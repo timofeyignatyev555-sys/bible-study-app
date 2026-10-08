@@ -5,7 +5,7 @@ import * as store from './store.js';
 import * as sync from './sync.js';
 import { calendarHTML, shortName, shiftMonth, startMonth } from './calgrid.js';
 
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 let state = null;
 let tab = 'home'; // home | settings
 let view = null;  // home body: list | cal | people (remembered per device)
@@ -352,7 +352,8 @@ function renderSettings() {
   </div></section>
   <section><h2>Sync</h2><div class="card stack" style="gap:12px">
     <div id="syncLine">${syncLine()}</div>
-    ${sync.token() ? `<div class="btn-row"><button class="btn" data-act="pull">Pull now</button><button class="btn" data-act="disconnect">Disconnect this device</button></div>` : `<div class="field"><label for="setToken">Sync token</label><input id="setToken" type="password" autocomplete="off" placeholder="paste token"></div><div class="err hidden" id="setTokenErr"></div><button class="btn primary" data-act="connect">Connect</button>`}
+    ${sync.token() ? `<div class="btn-row"><button class="btn" data-act="pull">Pull now</button><button class="btn" data-act="copytoken">Copy token</button><button class="btn" data-act="disconnect">Disconnect this device</button></div>
+    <p class="dim">Setting up another phone, or adding this app to the home screen again? Tap Copy token first, then paste it on the new device's Connect screen. Keep it private: it unlocks the whole roster.</p>` : `<div class="field"><label for="setToken">Sync token</label><input id="setToken" type="password" autocomplete="off" placeholder="paste token"></div><div class="err hidden" id="setTokenErr"></div><button class="btn primary" data-act="connect">Connect</button>`}
   </div></section>
   <section><h2>Appearance</h2><div class="card"><div class="seg">${['light', 'dark', 'auto'].map(v => `<button data-act="theme" data-v="${v}" aria-pressed="${theme === v}">${v[0].toUpperCase() + v.slice(1)}</button>`).join('')}</div></div></section>
   <section><h2>Backup</h2><div class="card stack" style="gap:10px">
@@ -707,6 +708,7 @@ document.addEventListener('click', e => {
     copy: () => copySummary(id), edithh: () => householdSheet(id), addperson: () => personSheet(null), editperson: () => personSheet(id), addevent: () => addEventSheet(),
     unskip: () => { const m = meeting(id); m.skipped = []; closeSheet(); commit('Skip undone'); },
     shuffle: shuffleLine, undo, redo,
+    copytoken: () => { const t = sync.token(); if (t) copyText(t, () => toast('Token copied. Paste it on the new device.')); },
     sharegroup: shareGroup, copygroup: async () => { const u = await getGroupLink(); if (u) copyText(u, () => toast('Group link copied')); },
     openGroup: async () => { const u = await getGroupLink(); if (u) window.open(u, '_blank', 'noopener'); },
     resetgroup: () => openSheet('Reset the group link?', '<p class="muted">The current link stops working for everyone. You will need to send the new link to the group.</p>', [{ label: 'Reset', cls: 'danger', onClick: async () => { closeSheet(); const u = await getGroupLink(true); if (u) { render(); toast('New link ready; share it with the group'); } } }, { label: 'Keep', onClick: closeSheet }]),
