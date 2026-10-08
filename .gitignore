@@ -2,6 +2,7 @@ node_modules/
 tools/shots/
 .env
 dist-group/
+dist-admin/
 
 # wrangler files
 .wrangler

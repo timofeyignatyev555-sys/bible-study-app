@@ -2,7 +2,7 @@
   "name": "Bible Admin",
   "short_name": "Bible Admin",
   "description": "Leader app for the Friday Bible study: roster, hosting rotation, calendar and attendance.",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

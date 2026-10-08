@@ -12,4 +12,6 @@ Phone-first PWA for leading a weekly Bible study: roster, week-by-week calendar,
 
 Data lives in the browser (localStorage) and is mirrored to a private Cloudflare Worker + KV (`bible-study-sync`, separate repo) behind a token entered once per device. Members reach the same copy through the group key, which only exposes hosting + calendar. Pushes carry the server copy they were built on, and the app merges field by field when a member changed something in between. No names or addresses are in this repo.
 
+The leader app is also served from its own address, `https://bible-admin.pages.dev` (Cloudflare Pages project `bible-admin`; `node tools/build-admin.mjs && npx wrangler pages deploy dist-admin --project-name bible-admin --branch main`), which is what goes on the Home Screen; the github.io copy updates on `git push`.
+
 Local: `python -m http.server 8124`, then open `http://127.0.0.1:8124/index.html`. Point the app at a local worker with `localStorage['bs.worker'] = 'http://localhost:8787'`.

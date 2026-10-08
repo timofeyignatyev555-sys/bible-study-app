@@ -5,7 +5,7 @@ import * as store from './store.js';
 import * as sync from './sync.js';
 import { calendarHTML, shortName, shiftMonth, startMonth } from './calgrid.js';
 
-const VERSION = '2.1.0';
+const VERSION = '2.1.1';
 let state = null;
 let tab = 'home'; // home | settings
 let view = null;  // home body: list | cal | people (remembered per device)
