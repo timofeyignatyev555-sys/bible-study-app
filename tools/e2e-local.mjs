@@ -269,7 +269,9 @@ await shot(G, '18-group-day-sheet');
 await G.locator('#sheetClose').click();
 const aWoman = sD.people.find(p => p.gender === 'f');
 check(!/\bMen\b/.test(await G.locator('#g').innerText()), 'no men category on the members page');
-check(!JSON.stringify(await (await fetch(WORKER + '/group', { headers: { 'X-Group-Key': gkey } })).json()).includes('gender'), 'gender never reaches members');
+const gData = JSON.stringify(await (await fetch(WORKER + '/group', { headers: { 'X-Group-Key': gkey } })).json());
+check(!gData.includes('gender') && !gData.includes('"men"') && !gData.includes('devoStatus'), 'gender, the men\'s list and the line never reach the members\' page data');
+check(!gData.includes('group page PIN'), 'first-PIN log lines stay with the leader');
 
 // ---------- a man moves his own devotional
 const man1Week = dWeeks[1]; const man1 = sD.people.find(p => p.id === man1Week.devoId);
@@ -341,6 +343,7 @@ const sM = await server();
 const allMen = sM.people.filter(p => p.gender === 'm' && p.active !== false);
 const missingMen = allMen.filter(p => !menTxt.includes(p.name)).map(p => p.name);
 check(!missingMen.length, `Men view lists every man (${allMen.length}${missingMen.length ? '; missing ' + missingMen.join(', ') : ''})`);
+check(sM.log.some(e => e.admin && /set their group page PIN/.test(e.text)), 'the leader\'s data records who set a PIN');
 const leakedWomen = sM.people.filter(p => p.gender === 'f').filter(p => menTxt.includes(p.name)).filter(f => !sM.meetings.some(m => m.date >= TODAY && (sM.households.find(h => h.id === m.hostHouseholdId) || {}).name === f.name)).map(p => p.name);
 check(!leakedWomen.length, 'no women in the men\'s lists (a woman can show only as a Friday\'s host)' + (leakedWomen.length ? ': ' + leakedWomen.join(', ') : ''));
 check(sM.people.filter(p => !p.gender && p.active !== false).every(p => menTxt.includes(p.name)), 'people not marked yet are listed to set');
@@ -394,15 +397,28 @@ await G.locator('#gRefresh').click(); await wait(800);
 await G.locator(`#g [data-act="hh"][data-id="${target.householdId}"]`).first().click(); await wait(300);
 check(/Mar 14/.test(await G.locator('#sheetBody').innerText()), 'member sees the new birthday under their name');
 await G.locator('#sheetClose').click();
-// the admin resets the PIN; the member's phone is then asked again
+// the admin resets the PIN while the member has their own sheet open; the save is refused, and tapping the name asks again
+await G.locator(`#g [data-act="hh"][data-id="${target.householdId}"]`).first().click(); await wait(400);
+check(await G.locator('#hAddr').count() === 1, 'the member has their own sheet open');
 await L.locator(`#viewBody [data-act="editperson"][data-id="${target.id}"]`).click(); await wait(700);
 await L.locator('#pPinReset').click(); await wait(900);
 check(/Not set/.test(await L.locator('#pPinState').innerText()), 'admin reset clears the PIN');
 await L.locator('#sheetClose').click();
-await G.locator(`#g [data-act="hh"][data-id="${target.householdId}"]`).first().click(); await wait(300);
 await G.locator('#hAddr').fill('200 Reset Ave'); await G.locator('#sheetFoot .btn.primary').click(); await wait(900);
-check(/PIN again/.test(await G.locator('#toast').innerText()), 'after a reset the member is asked again: ' + await G.locator('#toast').innerText());
+check(/PIN again/.test(await G.locator('#toast').innerText()), 'a save after a reset asks for the PIN again: ' + await G.locator('#toast').innerText());
 check((await server()).households.find(h => h.id === target.householdId).address !== '200 Reset Ave', 'and that change did not go through');
+await G.locator(`#g [data-act="hh"][data-id="${target.householdId}"]`).first().click(); await wait(400);
+check(await G.locator('#hAddr').count() === 0 && await G.locator('#sheetBody [data-me]').count() > 0, 'and their name is read only until they confirm it again');
+await G.locator('#sheetClose').click();
+// a phone still signed in when the reset happens is caught the moment it taps the name
+await beMember(target.householdId);
+await G.locator(`#g [data-act="hh"][data-id="${target.householdId}"]`).first().click(); await wait(400);
+check(await G.locator('#hAddr').count() === 1, 'they pick a new PIN and their own sheet opens again');
+await G.locator('#sheetClose').click();
+await fetch(WORKER + '/admin/pin/reset', { method: 'POST', headers: { 'X-App-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ personId: target.id }) });
+await G.locator(`#g [data-act="hh"][data-id="${target.householdId}"]`).first().click(); await wait(500);
+check(await G.locator('#hAddr').count() === 0 && /PIN again/.test(await G.locator('#toast').innerText()), 'a phone signed in before a reset is asked again as soon as it taps the name');
+await G.locator('#sheetClose').click();
 // marking someone not a man takes them out of the line
 await L.locator(`#viewBody [data-act="editperson"][data-id="${target.id}"]`).click(); await wait(400);
 await L.locator('#pGender [data-v="f"]').click(); await L.locator('#sheetFoot .btn.primary').click(); await wait(2200);

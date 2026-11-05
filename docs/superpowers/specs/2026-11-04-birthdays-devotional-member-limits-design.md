@@ -22,7 +22,7 @@ He asked for it to be built without a round of questions, so the calls below are
 - `plan()` assigns devotionals with the same rules as hosts: past weeks are frozen and replayed, pinned weeks stay, a skipped man takes the next week, off weeks consume no turn. A trade or cover works like `reassignHost`.
 - A week has a devotional when the meeting is on, not switched off, and is a regular study or falls on the meeting weekday. A one-off Saturday party has none.
 - Admin: fourth view "Men" laid out like the Hosting list (schedule, next in line, on hold, already gave it, not marked yet). A week sheet offers someone else, can't do it, back to the normal order, no devotional this week. A man's sheet offers hold / never and earlier / later in the line.
-- Members: the "this week" card and the calendar show only who has the devotional that Friday. The men's list and line are not displayed. A man taps his name to swap or put himself on hold, same as hosting. The hosting list stays about hosting.
+- Members: the "this week" card and the calendar show only who has the devotional that Friday. The men's list and line are not in the page data at all. A man taps his name to swap or put himself on hold, same as hosting; his own sheet fetches his status and the men who can take a week (`POST /group/devo`, signed in, by name, never the line). A household with no man gets no list of men. The hosting list stays about hosting.
 
 ## Member limits
 
@@ -33,6 +33,8 @@ The group link is shared, so until now anyone holding it could change anyone's a
 - Enforced by the worker, not the page. `/group/act` needs `{ me: { id, token } }`, checks it against `pin:<personId>` in KV, and only acts on the member's own household. `by` in the log comes from the server. Swaps can only give away your own week, and only to someone who is not on hold.
 - Household is the unit: siblings can act for each other, including each man's devotional.
 - Five wrong PINs lock that name for an hour. The admin can reset a PIN from the person sheet (`GET /admin/pin`, `POST /admin/pin/reset`).
+- Keys are `pin:<id>` (written only when first set, so a failed guess can never overwrite it or bring back one that was reset), `pinfails:<id>` and `pinlock:<id>` (expires by itself; a wrong try never touches it). KV is not atomic, so a burst of parallel guesses could undercount wrong tries; the `PIN_LIMIT` rate-limit binding (5 attempts a minute per name) caps how fast guesses can arrive at all.
+- **Known tradeoff, the leader's call:** whoever taps a name first sets its PIN, so someone holding the link could claim a name that has no PIN yet. Every first claim is logged for the leader only (`admin: true` log entries, filtered out of the group's data), everything done under a name is logged, and a reset gives the name back. The airtight alternative is a one-time code per person, sent by the leader, which means about 30 messages. A 4-digit PIN is a fence for a group of friends, not bank security.
 - Admin only, with no member path at all: people, birthdays, men's list and line order, events, cancelling weeks, attendance, notes, settings, "never" statuses, the group link.
 
 ## Sync

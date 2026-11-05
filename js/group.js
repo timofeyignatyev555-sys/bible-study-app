@@ -25,10 +25,11 @@ let key = new URLSearchParams(location.search).get('k') || pref('key');
 if (key) pref('key', key);
 let g = null; try { g = JSON.parse(pref('cache') || 'null'); } catch {}
 let me = null; try { me = JSON.parse(pref('me') || 'null'); } catch {} // { id, token }: who this device confirmed itself as, with their PIN
+let devo = null; // { mine, candidates }: your household's devotional details, fetched when your own sheet opens. Never part of the page data, so the men's list stays private.
 let netState = 'loading'; // loading | ok | offline | forbidden
 let calMonth = null;
 document.documentElement.dataset.theme = localStorage.getItem('bs.theme') === 'dark' ? 'dark' : 'light';
-const setMe = v => { me = v; pref('me', v ? JSON.stringify(v) : null); };
+const setMe = v => { me = v; devo = null; pref('me', v ? JSON.stringify(v) : null); };
 
 let toastT;
 function toast(msg) { const el = $('#toast'); el.textContent = msg; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2800); }
@@ -73,7 +74,6 @@ const isHome = m => m.status === 'on' && !m.place;
 const nextDate = hid => upcoming().find(x => isHome(x) && x.hostId === hid) || null;
 function where(m) { if (m.place) return m.place.name || 'Somewhere else'; const h = hh(m.hostId); return h ? h.label : (m.status === 'on' ? 'Host not set yet' : ''); }
 function addrOf(m) { if (m.place) return m.place.address; const h = hh(m.hostId); return h ? h.address : ''; }
-const man = id => (g.men || []).find(x => x.id === id) || null;
 const nextDevo = pid => upcoming().find(x => x.status === 'on' && x.devoId === pid) || null;
 const devoOf = m => (m.status === 'on' && m.devoId ? person(m.devoId) : null);
 const firstName = p => p.name.split(' ')[0];
@@ -191,13 +191,22 @@ function hostingLine(h) {
   return next ? `Hosting <b>${fmtLong(next.date)}</b> at ${fmtTime(next.time)}${next.title ? ' · ' + esc(next.title) : ''}`
     : h.status === 'unavailable' || h.status === 'never' ? esc(holdText(h)) : pos >= 0 ? `#${pos + 1} in line after the last scheduled week` : 'Not scheduled yet';
 }
-function hhSheet(hid) { const h = hh(hid); if (h) (mine(hid) ? ownSheet : viewSheet)(h); }
+async function hhSheet(hid) {
+  const h = hh(hid); if (!h) return;
+  if (!mine(hid)) { viewSheet(h); return; }
+  try { devo = await call('/group/devo', { me }); }
+  catch (e) {
+    if (e.code === 'whoami') { setMe(null); viewSheet(h); toast(e.message); return; } // Tim reset the PIN
+    devo = null; // offline: the sheet still opens, and says the devotional part could not load
+  }
+  ownSheet(h);
+}
 
 // Someone else's name, or yours before you confirm it: read only.
 function viewSheet(h) {
   const people = g.people.filter(p => p.householdId === h.id);
   const rows = people.map(p => {
-    const d = man(p.id) ? nextDevo(p.id) : null;
+    const d = nextDevo(p.id);
     const facts = [p.birthday ? 'Birthday ' + fmtBirthday(p.birthday) : '', d ? 'Devotional ' + fmtShort(d.date) : ''].filter(Boolean).join(' · ');
     return `<div class="row"><div class="main"><div class="t">${esc(p.name)}</div>${facts ? `<div class="s wrap">${esc(facts)}</div>` : ''}${p.phone ? `<div class="s wrap"><a href="${telUrl(p.phone)}">${esc(p.phone)}</a> · <a href="${smsUrl(p.phone)}">text</a></div>` : ''}</div></div>`;
   }).join('');
@@ -245,10 +254,9 @@ function ownSheet(h) {
   const held = h.status === 'unavailable';
   const first = h.label.split(' (')[0];
   const bdays = people.filter(p => p.birthday).map(p => (people.length > 1 ? firstName(p) + ' ' : '') + fmtBirthday(p.birthday));
-  const menHere = people.filter(p => man(p.id));
-  const devo = menHere.map(p => {
+  const devoBlock = ((devo && devo.mine) || []).filter(mn => person(mn.id)).map(mn => {
     // the household shares one sheet, so name the man unless he is the one holding the phone
-    const mn = man(p.id), d = nextDevo(p.id), who = p.id === me.id ? '' : esc(firstName(p));
+    const p = person(mn.id), d = nextDevo(p.id), who = p.id === me.id ? '' : esc(firstName(p));
     const hold = mn.status === 'unavailable';
     const line = d ? `${who ? who + ': ' : ''}<b>${fmtLong(d.date)}</b>`
       : mn.status === 'never' ? `${who ? who + ': ' : ''}Not in the devotional line`
@@ -270,7 +278,7 @@ function ownSheet(h) {
     ${h.status === 'never' ? '' : held
       ? `<div class="notice">${esc(first)} ${people.length > 1 ? 'are' : 'is'} on hold${h.until ? ' until ' + fmtLong(h.until) : ''} and won't be scheduled to host.</div><button class="btn" id="hBack" style="width:100%">${people.length > 1 ? 'We' : 'I'} can host again</button>`
       : `<button class="btn ghost" id="hHold" style="width:100%">Put on hold (can't host for a while)</button>`}
-    ${devo ? `<div class="eyebrow month">Friday devotional</div>${devo}` : ''}
+    ${devoBlock ? `<div class="eyebrow month">Friday devotional</div>${devoBlock}` : (devo ? '' : '<p class="dim">Your devotional could not load. Check your connection and open this again.</p>')}
     <p class="dim"><button class="linkbtn" id="hOut">Not ${esc(firstName(person(me.id)))}?</button></p>`,
     [{ label: 'Save', cls: 'primary', onClick: () => {
       const address = ($('#hAddr').value || '').trim();
@@ -348,9 +356,9 @@ function swapSheet(fromId, mid) {
 
 function devoSwapSheet(pid, mid) {
   const m = g.meetings.find(x => x.id === mid); const from = person(pid); if (!m || !from) return;
-  const cands = (g.men || []).filter(x => x.id !== pid && x.status === 'available').map(x => person(x.id)).filter(Boolean);
+  const cands = ((devo && devo.candidates) || []).filter(id => id !== pid).map(person).filter(Boolean);
   const withDate = cands.map(p => ({ p, d: nextDevo(p.id) })).filter(x => x.d).sort((a, b) => a.d.date < b.d.date ? -1 : 1);
-  const without = cands.filter(p => !nextDevo(p.id)); // already in line order
+  const without = cands.filter(p => !nextDevo(p.id)); // by name, as the server sends them; the line itself stays private
   const fromName = firstName(from);
   pickSheet(`Can't say it ${fmtShort(m.date)}?`, `First talk to someone and make sure they can take ${fmtLong(m.date)}. Then pick them here so everyone sees the change.`, "Men on hold aren't listed. Nobody can? Message Tim.", [
     { title: 'Already have a Friday: you trade', rows: withDate.map(({ p, d }) => pickRow(p.id, p.name, `Has ${fmtShort(d.date)} · ${esc(fromName)} would take ${fmtShort(d.date)}`, p.phone, `${p.name} says the devotional ${fmtShort(m.date)} and ${fromName} says it ${fmtShort(d.date)}.`)) },
