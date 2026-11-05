@@ -85,7 +85,7 @@ export function plan(state, today) {
   const byId = Object.fromEntries(state.households.map(h => [h.id, h]));
   const queue = currentQueue(state, today);
   const upNext = [...queue];
-  const meetings = sortMeetings(state.meetings).map(m => ({ ...m, skipped: [...(m.skipped || [])], attendance: { ...(m.attendance || {}) } }));
+  const meetings = sortMeetings(state.meetings).map(m => ({ ...m, skipped: [...(m.skipped || [])], attendance: { ...(m.attendance || {}) }, devoSkipped: [...(m.devoSkipped || [])] }));
 
   // pinned future hosts go to the back first so they are not also auto-assigned an earlier week
   for (const m of meetings) {
@@ -103,7 +103,117 @@ export function plan(state, today) {
     if (pick) { m.hostHouseholdId = pick; moveToBack(queue, pick); }
     else m.hostHouseholdId = null;
   }
+  assignDevos(state, meetings, today);
   return { meetings, queue: upNext };
+}
+
+// ---------- Friday devotional: one man per meeting, in his own line, on the same rules as hosting.
+export function activeMen(state) {
+  return state.people.filter(p => p.gender === 'm' && p.active !== false);
+}
+
+// Should this week have a devotional at all? A regular study does (even if moved to another day), and so does anything on the meeting weekday. A one-off Saturday party does not.
+export function devoWeek(m, state) {
+  return m.status === 'on' && (m.kind !== 'event' || weekdayOf(m.date) === state.settings?.weekday);
+}
+export function devoApplies(m, state) {
+  return devoWeek(m, state) && !m.devoOff;
+}
+
+export function devoEligible(p, date, meeting) {
+  if (!p || p.devoStatus === 'never') return false;
+  if (p.devoStatus === 'unavailable' && (!p.devoUntil || date < p.devoUntil)) return false;
+  return !(meeting.devoSkipped || []).includes(p.id);
+}
+
+// The men's line as it stands "now": their order, plus any man missing from it, with everyone who already gave one at the back.
+export function devoQueue(state, today) {
+  const men = activeMen(state);
+  const ids = new Set(men.map(p => p.id));
+  const queue = (state.devotion?.order || []).filter(id => ids.has(id));
+  const seen = new Set(queue);
+  men.filter(p => !seen.has(p.id)).sort((a, b) => a.name.localeCompare(b.name)).forEach(p => queue.push(p.id));
+  for (const m of sortMeetings(state.meetings)) {
+    if (isPast(m, today) && m.devoId && devoApplies(m, state)) moveToBack(queue, m.devoId);
+  }
+  return queue;
+}
+
+function assignDevos(state, meetings, today) {
+  const byId = Object.fromEntries(activeMen(state).map(p => [p.id, p]));
+  const queue = devoQueue(state, today);
+  // pinned men go to the back first so they are not also auto-assigned an earlier week
+  for (const m of meetings) {
+    if (!isPast(m, today) && devoApplies(m, state) && m.devoMode === 'pinned' && m.devoId) moveToBack(queue, m.devoId);
+  }
+  for (const m of meetings) {
+    if (isPast(m, today)) continue;
+    if (!devoApplies(m, state)) { if (m.devoMode !== 'pinned') m.devoId = null; continue; }
+    if (m.devoMode === 'pinned' && m.devoId && byId[m.devoId]) { moveToBack(queue, m.devoId); continue; }
+    m.devoMode = 'auto';
+    const pick = queue.find(id => devoEligible(byId[id], m.date, m));
+    if (pick) { m.devoId = pick; moveToBack(queue, pick); }
+    else m.devoId = null;
+  }
+}
+
+// Per-man numbers for the Men view.
+export function devoStats(state, today) {
+  const out = {};
+  for (const p of activeMen(state)) out[p.id] = { given: 0, last: null, next: null };
+  for (const m of sortMeetings(state.meetings)) {
+    if (!m.devoId || !devoApplies(m, state)) continue;
+    const s = out[m.devoId]; if (!s) continue;
+    if (isPast(m, today)) { s.given++; s.last = m.date; }
+    else if (!s.next) s.next = m.date;
+  }
+  return out;
+}
+
+// Men waiting for a turn after everything already planned: in line order, able to give one at some point.
+export function devoNextInLine(state, today) {
+  const planned = new Set(state.meetings.filter(m => !isPast(m, today) && m.devoId && devoApplies(m, state)).map(m => m.devoId));
+  const byId = Object.fromEntries(activeMen(state).map(p => [p.id, p]));
+  return devoQueue(state, today).filter(id => !planned.has(id) && byId[id].devoStatus !== 'never' && !(byId[id].devoStatus === 'unavailable' && !byId[id].devoUntil));
+}
+
+// "Someone else gives the devotional". Mutates state.meetings; the caller re-plans afterwards.
+// If the new man already has a week planned, the two trade and both are pinned. Otherwise he is pinned here and the original man takes the next open week.
+export function reassignDevo(state, meetingId, toId, today) {
+  const m = state.meetings.find(x => x.id === meetingId);
+  if (!m) return { error: 'That week no longer exists.' };
+  if (isPast(m, today)) return { error: 'That week is already over.' };
+  if (!devoApplies(m, state)) return { error: 'There is no devotional that week.' };
+  const to = activeMen(state).find(p => p.id === toId);
+  if (!to) return { error: 'Pick one of the men.' };
+  if (to.devoStatus === 'never') return { error: 'They are not in the devotional line.' };
+  const from = m.devoId || null;
+  if (from === toId) return { error: 'They already have that week.' };
+  const other = from ? sortMeetings(state.meetings).find(x => x.id !== m.id && !isPast(x, today) && devoApplies(x, state) && x.devoId === toId) : null;
+  m.devoId = toId; m.devoMode = 'pinned';
+  m.devoSkipped = (m.devoSkipped || []).filter(id => id !== toId);
+  if (other) {
+    other.devoId = from; other.devoMode = 'pinned';
+    other.devoSkipped = (other.devoSkipped || []).filter(id => id !== from);
+    return { kind: 'trade', from, to: toId, date: m.date, otherDate: other.date };
+  }
+  return { kind: 'cover', from, to: toId, date: m.date };
+}
+
+// Put a man on hold from devotionals (until a date, or until further notice) or take him off hold.
+// Weeks pinned to him from today on go back to the normal order, so the next man takes them.
+export function setDevoHold(state, pid, onHold, until = null, today) {
+  const p = activeMen(state).find(x => x.id === pid);
+  if (!p) return { error: 'Only the men are in the devotional line.' };
+  if (p.devoStatus === 'never') return { error: 'Only the leader can change this.' };
+  if (onHold) {
+    if (until && (!/^\d{4}-\d{2}-\d{2}$/.test(until) || until <= today)) return { error: 'Pick a date after today.' };
+    p.devoStatus = 'unavailable'; p.devoUntil = until || null;
+    for (const m of state.meetings) {
+      if (m.devoId === pid && m.devoMode === 'pinned' && !isPast(m, today) && (!until || m.date < until)) m.devoMode = 'auto';
+    }
+  } else { p.devoStatus = 'available'; p.devoUntil = null; }
+  return { ok: true };
 }
 
 // Per-household numbers for the Hosting tab.
@@ -142,7 +252,7 @@ export function fillSeason(state) {
   return added;
 }
 
-// Display name for a household: "Anna & David (Bak)" when siblings share it, the person's name otherwise.
+// Display name for a household: "Anna & Ben (Reed)" when siblings share it, the person's name otherwise.
 export function householdLabel(state, h) {
   if (!h) return '';
   const names = state.people.filter(p => p.householdId === h.id && p.active !== false).map(p => p.name);

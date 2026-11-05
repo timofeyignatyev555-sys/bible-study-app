@@ -11,7 +11,7 @@ export function emptyState(today) {
     version: 1,
     updatedAt: new Date(0).toISOString(),
     settings: { name: 'Bible Study', weekday: 5, defaultTime: '19:00', seasonStart: today, seasonEnd: `${y}-12-31` },
-    people: [], households: [], rotation: { order: [] }, meetings: [], log: []
+    people: [], households: [], rotation: { order: [] }, devotion: { order: [] }, meetings: [], log: []
   };
 }
 
@@ -21,15 +21,16 @@ export function normalize(s, today) {
   const out = { ...base, ...s };
   out.settings = { ...base.settings, ...(s.settings || {}) };
   out.rotation = { order: [...((s.rotation && s.rotation.order) || [])] };
-  out.people = (s.people || []).map(p => ({ phone: '', notes: '', active: true, ...p }));
+  out.devotion = { order: [...((s.devotion && s.devotion.order) || [])] };
+  out.people = (s.people || []).map(p => ({ phone: '', notes: '', active: true, birthday: '', devoStatus: 'available', devoUntil: null, ...p }));
   out.households = (s.households || []).map(h => ({ address: '', hostStatus: 'available', unavailableUntil: null, note: '', ...h }));
   out.log = [...(s.log || [])];
-  out.meetings = (s.meetings || []).map(m => ({ status: 'on', kind: 'study', title: '', time: out.settings.defaultTime, hostHouseholdId: null, hostMode: 'auto', location: null, topic: '', leaderId: null, notes: '', attendance: {}, skipped: [], ...m }));
+  out.meetings = (s.meetings || []).map(m => ({ status: 'on', kind: 'study', title: '', time: out.settings.defaultTime, hostHouseholdId: null, hostMode: 'auto', location: null, topic: '', leaderId: null, notes: '', attendance: {}, skipped: [], devoId: null, devoMode: 'auto', devoSkipped: [], devoOff: false, ...m }));
   return out;
 }
 
 // Three-way merge for sync: whatever this device changed since `base` wins field by field, everything else comes from the server.
-// Auto-assigned future hosts are derived data, so they are blanked first and the caller re-plans.
+// Auto-assigned future hosts and devotionals are derived data, so they are blanked first and the caller re-plans.
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function mergeObj(b, l, s) {
   const out = {};
@@ -51,11 +52,13 @@ function mergeList(b = [], l = [], s = []) {
   return out;
 }
 export function merge3(base, local, server, today) {
-  const strip = s => ({ ...s, meetings: (s.meetings || []).map(m => (m.hostMode === 'pinned' || m.date < today || (m.attendance && Object.keys(m.attendance).length)) ? m : { ...m, hostHouseholdId: null }) });
+  const frozen = m => m.date < today || (m.attendance && Object.keys(m.attendance).length);
+  const strip = s => ({ ...s, meetings: (s.meetings || []).map(m => ({ ...m, hostHouseholdId: m.hostMode === 'pinned' || frozen(m) ? m.hostHouseholdId : null, devoId: m.devoMode === 'pinned' || frozen(m) ? m.devoId ?? null : null })) });
   const [b, l, s] = [base, local, server].map(strip);
   const out = mergeObj(b, l, s);
   out.settings = mergeObj(b.settings, l.settings, s.settings);
   out.rotation = mergeObj(b.rotation, l.rotation, s.rotation);
+  out.devotion = mergeObj(b.devotion, l.devotion, s.devotion);
   for (const k of ['people', 'households', 'meetings']) out[k] = mergeList(b[k], l[k], s[k]);
   const log = new Map([...(s.log || []), ...(l.log || [])].map(e => [e.id, e]));
   out.log = [...log.values()].sort((x, y) => (x.at < y.at ? -1 : 1)).slice(-100);

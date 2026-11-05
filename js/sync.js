@@ -89,6 +89,10 @@ export async function claimCode(code) {
   return data.token;
 }
 
+// Member PINs: the leader can see whether one is set and clear it when someone forgets. The PIN itself never leaves the worker.
+export const pinInfo = id => call('/admin/pin?person=' + encodeURIComponent(id), 'GET');
+export const pinReset = id => call('/admin/pin/reset', 'POST', { personId: id });
+
 // The link Tim shares with the group. The key lives in the worker so it can be reset from here.
 export async function groupLink(reset = false) {
   const r = await call(reset ? '/admin/group-key/reset' : '/admin/group-key', reset ? 'POST' : 'GET');

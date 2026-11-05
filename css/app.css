@@ -2,7 +2,7 @@
   --ground:#FAF8F4; --surface:#FFFFFF; --surface-2:#F3F0EA; --surface-3:#E9E5DD; --rule:#DED9CF; --rule-2:#ECE8E1;
   --ink:#1D1F24; --ink-2:#50535A; --ink-3:#80838A;
   --accent:#B26F0C; --accent-ink:#FFFFFF; --accent-soft:#FBEFD9;
-  --ok:#2E8B5E; --ok-soft:#DFF2E7; --warn:#A8670B; --warn-soft:#FDF1DC; --crit:#B7433A; --crit-soft:#FBE5E2; --info:#2C6DBF; --info-soft:#E3EDFA;
+  --ok:#2E8B5E; --ok-soft:#DFF2E7; --warn:#A8670B; --warn-soft:#FDF1DC; --crit:#B7433A; --crit-soft:#FBE5E2; --info:#2C6DBF; --info-soft:#E3EDFA; --rose:#B0407A; --rose-soft:#FBE9F2;
   --shadow:0 1px 2px rgba(26,28,32,.05),0 10px 28px -18px rgba(26,28,32,.22);
   --sans:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
   --serif:"Literata",Georgia,"Times New Roman",serif;
@@ -14,7 +14,7 @@
   --ground:#101418; --surface:#181D23; --surface-2:#1F252C; --surface-3:#272E37; --rule:#2B323B; --rule-2:#232930;
   --ink:#EDE9E0; --ink-2:#B4AFA5; --ink-3:#7F7B73;
   --accent:#E3A93E; --accent-ink:#1A1408; --accent-soft:#2F2612;
-  --ok:#4CBB8A; --ok-soft:#16302A; --warn:#E3A93E; --warn-soft:#2E2512; --crit:#E06B5F; --crit-soft:#33201D; --info:#5A9BE6; --info-soft:#1B2836;
+  --ok:#4CBB8A; --ok-soft:#16302A; --warn:#E3A93E; --warn-soft:#2E2512; --crit:#E06B5F; --crit-soft:#33201D; --info:#5A9BE6; --info-soft:#1B2836; --rose:#E88BB6; --rose-soft:#351D2A;
   --shadow:0 1px 2px rgba(0,0,0,.5),0 12px 32px -18px rgba(0,0,0,.9);
   color-scheme:dark;
 }
@@ -197,3 +197,24 @@ kbd{font-family:var(--mono);font-size:.8rem;background:var(--surface-3);padding:
 
 /* one-time setup code */
 .paircode{font-size:2.3rem;font-weight:700;letter-spacing:.14em;text-align:center;padding:16px 0;background:var(--surface-2);border:1px solid var(--rule);border-radius:12px;user-select:all;-webkit-user-select:all}
+
+/* Friday devotional + birthdays */
+.who.sub{margin-top:10px}
+.who.sub .host{font-size:1rem;font-weight:600}
+.cal .ic{width:11px;height:11px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.cal .ic .flame{fill:currentColor;stroke:none}
+.cal .day .dv,.cal .day .bd{margin:0;display:flex;align-items:center;justify-content:center;gap:2px;font-size:.64rem;font-weight:600;line-height:1.2;max-width:100%;min-width:0}
+.cal .day .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cal .day .dv{color:var(--ink-2)}
+.cal .day .bd{color:var(--rose)}
+.cal .day.bday{background:var(--rose-soft);border-color:var(--rose-soft);color:var(--ink);cursor:pointer}
+.cal .day.bday .bd{flex-direction:column;gap:1px;font-size:.58rem;letter-spacing:-.02em}
+.cal .legend .lg-dv,.cal .legend .lg-bd{display:inline-flex;align-items:center;gap:4px}
+.cal .legend .lg-bd{color:var(--rose)}
+
+/* admin home switcher: four choices stay on one line on the narrowest phones */
+.seg.four button{flex:1 1 auto;padding:8px 4px;white-space:nowrap}
+
+/* member PIN */
+.pinin{font-family:var(--mono);font-size:1.5rem!important;letter-spacing:.4em;text-align:center}
+.pinin.mask{-webkit-text-security:disc}

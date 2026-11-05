@@ -58,8 +58,19 @@ console.log('LINK:', glink);
 check(glink && glink.includes('/group/?k='), 'settings shows the group link');
 
 // ---- member
+const PIN = '4242';
 const G = await mk(`localStorage.setItem('bs.worker', ${JSON.stringify(WORKER)});`);
 await G.goto(glink, { waitUntil: 'networkidle' }); await wait(600);
+// forget who this browser was, tap their name, confirm with their PIN (picks one if they have none yet)
+const beMember = async hid => {
+  await G.evaluate(() => localStorage.removeItem('bsg.me'));
+  await G.reload({ waitUntil: 'networkidle' }); await wait(400);
+  await G.locator('[data-act="view"][data-v="list"]').click(); await wait(200);
+  await G.locator(`#g [data-act="hh"][data-id="${hid}"]`).first().click(); await wait(300);
+  await G.locator('#sheetBody [data-me]').first().click(); await wait(600);
+  await G.locator('#pinIn').fill(PIN); await G.locator('#sheetFoot .btn.primary').click(); await wait(800);
+  await G.locator('#sheetClose').click(); await wait(150);
+};
 check(!/Who are you/.test(await G.locator('#g').innerText()) && /tap it to add your address/i.test(await G.locator('#g').innerText()), 'member lands straight on the schedule (no name picker)');
 await shot(G, '5-group-picker');
 const s0 = await server();
@@ -71,9 +82,18 @@ const nellie = s0.people.find(p => p.householdId === nellieMeet.hostHouseholdId 
 const partnerH = fut[fut.length - 2].hostHouseholdId;
 await G.locator(`#g [data-act="hh"][data-id="${nellie.householdId}"]`).first().click(); await wait(300);
 let gt = await G.locator('#sheetBody').innerText();
-check(/Hosting/.test(gt) && /Address/i.test(gt), 'tapping a name opens their address + hosting week');
+check(/Hosting/.test(gt) && await G.locator('#sheetBody input').count() === 0 && await G.locator('#sheetBody [data-me]').count() > 0, 'tapping a name is read only until you confirm it is you');
 console.log('MEMBER TURN:', gt.split('\n').slice(0, 8).join(' | '));
-await shot(G, '6-group-main');
+await shot(G, '6-group-name-read-only');
+await G.locator('#sheetBody [data-me]').first().click(); await wait(600);
+check(/pick a PIN/i.test(await G.locator('#sheetTitle').innerText()), 'the first time, a member picks a PIN');
+await shot(G, '6b-group-pick-pin');
+await G.locator('#pinIn').fill('12'); await G.locator('#sheetFoot .btn.primary').click(); await wait(300);
+check(/4 numbers/.test(await G.locator('#pinErr').innerText()), 'a short PIN is refused on the page');
+await G.locator('#pinIn').fill(PIN); await G.locator('#sheetFoot .btn.primary').click(); await wait(900);
+gt = await G.locator('#sheetBody').innerText();
+check(/Address/i.test(gt) && await G.locator('#hAddr').count() === 1, 'after the PIN, your own name opens for changes');
+await shot(G, '6c-group-own-name');
 check(await G.locator('[data-act="editmeeting"], [data-act="addevent"], .tabbar').count() === 0, 'member page has no editing of the calendar');
 await G.locator('#hAddr').fill('100 Test Ave, Minneapolis'); await G.locator('#sheetFoot .btn.primary').click(); await wait(800);
 let s1 = await server();
@@ -168,7 +188,7 @@ const s6 = await server();
 const heldMeet = s6.meetings.filter(m => m.date > TODAY && m.status === 'on' && !m.location && m.hostHouseholdId && m.hostMode === 'auto').sort((a, b) => a.date < b.date ? -1 : 1)[0];
 const heldH = heldMeet.hostHouseholdId;
 const heldP = s6.people.find(p => p.householdId === heldH && p.active !== false);
-await G.locator('[data-act="view"][data-v="list"]').click(); await wait(300);
+await beMember(heldH);
 await G.locator(`#g [data-act="hh"][data-id="${heldH}"]`).first().click(); await wait(300);
 await G.locator(`#sheetBody input.phone[data-pid="${heldP.id}"]`).fill('612-555-0199'); await G.locator('#sheetFoot .btn.primary').click(); await wait(900);
 let s7 = await server();
@@ -213,6 +233,229 @@ check(s8.people.some(p => p.name === 'Test Sibling' && p.householdId === lineH),
 await G.locator('#gRefresh').click(); await wait(900);
 check((await G.locator('#g').innerText()).includes('Test (') || (await G.locator('#g').innerText()).includes(' & Test'), 'group page shows the new sibling in the household label');
 await shot(L, '15-admin-home');
+
+// ---------- birthdays on the calendar
+const sB = await server();
+const withBirthdays = sB.people.filter(p => p.birthday && p.active !== false);
+check(withBirthdays.length >= 30, `people have birthdays in the cloud (${withBirthdays.length})`);
+await G.locator('[data-act="view"][data-v="cal"]').click(); await wait(300);
+const janBd = withBirthdays.find(p => p.birthday.startsWith('01-'));
+await goMonth(G, `2027-${janBd.birthday}`);
+check((await G.locator('.cal .nav h3').innerText()) === 'January 2027', 'calendar pages past the last meeting to January');
+const janCell = G.locator(`.cal [data-act="calbday"][data-date="2027-${janBd.birthday}"]`);
+check(await janCell.count() === 1, `January shows the birthday on ${janBd.birthday}`);
+await shot(G, '16-group-january-birthdays');
+await janCell.click(); await wait(250);
+check((await G.locator('#sheetBody').innerText()).includes(janBd.name), 'tapping a birthday day names the person');
+await G.locator('#sheetClose').click();
+check(/Birthdays in January/i.test(await G.locator('#g').innerText()), 'birthday list under the January calendar');
+
+// ---------- the devotional as members see it
+const sD = await server();
+const nameOfId = (s, id) => s.people.find(p => p.id === id).name;
+const dWeeks = sD.meetings.filter(m => m.date >= TODAY && m.status === 'on' && m.devoId && !m.devoOff).sort((a, b) => a.date < b.date ? -1 : 1);
+check(dWeeks.length > 0, 'upcoming Fridays have a devotional');
+await G.reload({ waitUntil: 'networkidle' }); await wait(500);
+const heroG = await G.locator('#g .hero').innerText();
+check(/Devotional/i.test(heroG) && heroG.includes(nameOfId(sD, dWeeks[0].devoId)), 'this-week card names who has the devotional');
+await goMonth(G, dWeeks[0].date);
+const cellD = await calCell(G, dWeeks[0].date);
+check(cellD.includes(nameOfId(sD, dWeeks[0].devoId).split(' ')[0]), `calendar cell shows the devotional (${cellD.replace(/\n/g, ' ')})`);
+await shot(G, '17-group-november');
+await G.locator('.cal [data-act="calday"]').filter({ has: G.locator('.num', { hasText: new RegExp('^' + Number(dWeeks[0].date.slice(8)) + '$') }) }).first().click(); await wait(250);
+const dayTxt = await G.locator('#sheetBody').innerText();
+check(/Host/i.test(dayTxt) && /Devotional/i.test(dayTxt), 'day sheet shows host and devotional');
+await shot(G, '18-group-day-sheet');
+await G.locator('#sheetClose').click();
+const aWoman = sD.people.find(p => p.gender === 'f');
+check(!/\bMen\b/.test(await G.locator('#g').innerText()), 'no men category on the members page');
+check(!JSON.stringify(await (await fetch(WORKER + '/group', { headers: { 'X-Group-Key': gkey } })).json()).includes('gender'), 'gender never reaches members');
+
+// ---------- a man moves his own devotional
+const man1Week = dWeeks[1]; const man1 = sD.people.find(p => p.id === man1Week.devoId);
+const partnerWeek = dWeeks[dWeeks.length - 1]; const partner = sD.people.find(p => p.id === partnerWeek.devoId);
+await beMember(man1.householdId);
+await G.locator(`#g [data-act="hh"][data-id="${man1.householdId}"]`).first().click(); await wait(300);
+await shot(G, '19-group-man-sheet');
+await G.locator(`#sheetBody [data-devoswap="${man1.id}"]`).click(); await wait(300);
+await shot(G, '20-group-devo-swap');
+check(!(await G.locator('#sheetBody').innerText()).includes(aWoman.name), 'a woman is not offered as a devotional swap');
+await G.locator(`#sheetBody [data-to="${partner.id}"]`).click(); await wait(200);
+check(/Record this swap/.test(await G.locator('#sheetTitle').innerText()), 'devotional swap asks for confirmation');
+await G.locator('#sheetFoot .btn.primary').click(); await wait(900);
+const sD2 = await server();
+check(sD2.meetings.find(m => m.id === man1Week.id).devoId === partner.id && sD2.meetings.find(m => m.id === partnerWeek.id).devoId === man1.id, `devotional traded: ${man1Week.date} and ${partnerWeek.date}`);
+check(/devotional/i.test(sD2.log.at(-1).text), 'swap logged: ' + sD2.log.at(-1).text);
+await L.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await wait(1500);
+check(await L.evaluate(id => window.__bs.state.meetings.find(m => m.id === id).devoId, man1Week.id) === partner.id, 'leader app sees the devotional swap');
+// on hold, then back
+await G.locator(`#g [data-act="hh"][data-id="${man1.householdId}"]`).first().click(); await wait(300);
+await G.locator(`#sheetBody [data-devohold="${man1.id}"]`).click(); await wait(250);
+await shot(G, '21-group-devo-hold');
+await G.locator('#sheetFoot .btn.primary').click(); await wait(900);
+let sD3 = await server();
+check(sD3.people.find(p => p.id === man1.id).devoStatus === 'unavailable' && !sD3.meetings.some(m => m.date >= TODAY && m.devoId === man1.id), 'a man on hold drops off the Fridays');
+await G.locator(`#g [data-act="hh"][data-id="${man1.householdId}"]`).first().click(); await wait(300);
+await G.locator(`#sheetBody [data-devoback="${man1.id}"]`).click(); await wait(900);
+sD3 = await server();
+check(sD3.people.find(p => p.id === man1.id).devoStatus === 'available', 'and comes back');
+
+// ---------- limits: only your own things
+const liveH = id => sD3.people.some(p => p.householdId === id && p.active !== false);
+const other = sD3.households.find(h => h.id !== man1.householdId && liveH(h.id) && h.hostStatus === 'available');
+await G.locator(`#g [data-act="hh"][data-id="${other.id}"]`).first().click(); await wait(300);
+check(await G.locator('#sheetBody input').count() === 0 && await G.locator('#hSwap, #hHold, #hBack').count() === 0 && await G.locator('#sheetFoot .btn').count() === 0, 'someone else\'s name is read only, even when you are signed in');
+check(await G.locator('#sheetBody [data-me]').count() === 0, 'and cannot be claimed from this phone');
+await shot(G, '22-group-other-read-only');
+await G.locator('#sheetClose').click();
+check(await G.locator('[data-act="editmeeting"], [data-act="addevent"], [data-act="addperson"], [data-act="editperson"], [data-act="man"], [data-act="devoweek"], [data-act="savesettings"], [data-act="attendance"], #p-settings').count() === 0, 'no admin controls exist on the members page');
+const meNow = await G.evaluate(() => JSON.parse(localStorage.getItem('bsg.me')));
+const stateBefore = JSON.stringify(await server());
+const tryAct = async body => (await fetch(WORKER + '/group/act', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Group-Key': gkey }, body: JSON.stringify(body) })).status;
+check(await tryAct({ type: 'info', householdId: other.id, address: 'hijacked' }) === 401, 'server: no PIN, no change');
+check(await tryAct({ type: 'info', householdId: other.id, address: 'hijacked', me: meNow }) === 400, 'server: your PIN does not open someone else\'s address');
+check(await tryAct({ type: 'hold', householdId: other.id, me: meNow }) === 400, 'server: your PIN does not put someone else on hold');
+check(await tryAct({ type: 'birthday', personId: meNow.id, birthday: '01-01', me: meNow }) === 400, 'server: birthdays are admin only');
+check(JSON.stringify(await server()) === stateBefore, 'none of those changed anything in the cloud');
+for (const p of ['/state', '/admin/group-key']) check((await fetch(WORKER + p, { headers: { 'X-Group-Key': gkey } })).status === 403, 'group key cannot open ' + p);
+
+// ---------- wrong PIN, then a new phone
+await G.evaluate(() => localStorage.removeItem('bsg.me'));
+await G.reload({ waitUntil: 'networkidle' }); await wait(400);
+await G.locator('[data-act="view"][data-v="list"]').click(); await wait(200);
+await G.locator(`#g [data-act="hh"][data-id="${man1.householdId}"]`).first().click(); await wait(300);
+await G.locator('#sheetBody [data-me]').first().click(); await wait(600);
+check(!/pick a PIN/i.test(await G.locator('#sheetTitle').innerText()), 'a new phone asks for the PIN they already have');
+await G.locator('#pinIn').fill('0000'); await G.locator('#sheetFoot .btn.primary').click(); await wait(600);
+check(/not right/.test(await G.locator('#pinErr').innerText()), 'a wrong PIN is refused: ' + await G.locator('#pinErr').innerText());
+await shot(G, '23-group-wrong-pin');
+await G.locator('#pinIn').fill(PIN); await G.locator('#sheetFoot .btn.primary').click(); await wait(800);
+check(await G.locator('#hAddr').count() === 1, 'the right PIN opens it');
+await G.locator('#sheetClose').click();
+
+// ---------- the admin side
+await go(L, 'men'); await wait(300);
+await L.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await wait(1200);
+const menTxt = await L.locator('#viewBody').innerText();
+const sM = await server();
+const allMen = sM.people.filter(p => p.gender === 'm' && p.active !== false);
+const missingMen = allMen.filter(p => !menTxt.includes(p.name)).map(p => p.name);
+check(!missingMen.length, `Men view lists every man (${allMen.length}${missingMen.length ? '; missing ' + missingMen.join(', ') : ''})`);
+const leakedWomen = sM.people.filter(p => p.gender === 'f').filter(p => menTxt.includes(p.name)).filter(f => !sM.meetings.some(m => m.date >= TODAY && (sM.households.find(h => h.id === m.hostHouseholdId) || {}).name === f.name)).map(p => p.name);
+check(!leakedWomen.length, 'no women in the men\'s lists (a woman can show only as a Friday\'s host)' + (leakedWomen.length ? ': ' + leakedWomen.join(', ') : ''));
+check(sM.people.filter(p => !p.gender && p.active !== false).every(p => menTxt.includes(p.name)), 'people not marked yet are listed to set');
+await shot(L, '24-admin-men');
+await L.locator('#viewBody [data-act="devoweek"]').first().click(); await wait(250);
+const wkTxt = await L.locator('#sheetBody').innerText();
+check(/Someone else says it/.test(wkTxt) && /can't do it/.test(wkTxt) && /No devotional this week/.test(wkTxt), 'admin week sheet has the devotional actions');
+await shot(L, '25-admin-devo-week');
+await L.locator('#sheetBody [data-act="pickdevo"]').click(); await wait(250);
+await shot(L, '26-admin-pick-man');
+await L.locator('#sheetClose').click();
+// can't do it: the next man takes it and the first takes the week after
+const firstWeek = sM.meetings.filter(m => m.date >= TODAY && m.devoId && m.status === 'on').sort((a, b) => a.date < b.date ? -1 : 1)[0];
+await L.locator(`#viewBody [data-act="devoweek"][data-id="${firstWeek.id}"]`).click(); await wait(200);
+await L.locator('#sheetBody [data-act="cantdevo"]').click(); await wait(2200);
+const sM2 = await server();
+check(sM2.meetings.find(m => m.id === firstWeek.id).devoId !== firstWeek.devoId, 'admin: can\'t do it moves the week to the next man');
+check(sM2.meetings.some(m => m.date > firstWeek.date && m.devoId === firstWeek.devoId), 'and he takes a later Friday');
+// no devotional this week, then back on
+const secondWeek = sM2.meetings.filter(m => m.date > firstWeek.date && m.devoId && m.status === 'on').sort((a, b) => a.date < b.date ? -1 : 1)[0];
+await L.locator(`#viewBody [data-act="devoweek"][data-id="${secondWeek.id}"]`).click(); await wait(200);
+await L.locator('#sheetBody [data-act="devooff"]').click(); await wait(2200);
+const gm = (await (await fetch(WORKER + '/group', { headers: { 'X-Group-Key': gkey } })).json()).group;
+check(gm.meetings.find(m => m.id === secondWeek.id).devoId === null, 'admin: no devotional this week reaches members as nobody');
+await L.locator(`#viewBody [data-act="devoweek"][data-id="${secondWeek.id}"]`).click(); await wait(200);
+await L.locator('#sheetBody [data-act="devoon"]').click(); await wait(1500);
+// a man's sheet: earlier in the line
+const lineMan = await L.locator('#viewBody [data-act="man"]').nth(1).getAttribute('data-id');
+await L.locator(`#viewBody [data-act="man"][data-id="${lineMan}"]`).first().click(); await wait(250);
+await shot(L, '27-admin-man-sheet');
+const orderBefore = await L.evaluate(() => JSON.stringify(window.__bs.state.devotion.order));
+await L.locator('#dUp').click(); await wait(400);
+await L.locator('#sheetClose').click(); await wait(1600);
+check(await L.evaluate(() => JSON.stringify(window.__bs.state.devotion.order)) !== orderBefore, 'admin: earlier moves a man in the line');
+// person sheet: birthday + man/woman + PIN reset, all from the admin app
+await go(L, 'people'); await wait(250);
+check(/Birthday [A-Z][a-z]{2} \d+/.test(await L.locator('#viewBody').innerText()), 'People rows show the birthday under the name');
+await shot(L, '28-admin-people');
+const target = man1;
+await L.locator(`#viewBody [data-act="editperson"][data-id="${target.id}"]`).click(); await wait(700);
+await shot(L, '29-admin-person');
+check(/^Set /.test(await L.locator('#pPinState').innerText()), 'admin sees the PIN is set: ' + await L.locator('#pPinState').innerText());
+check(await L.locator('#pBMonth').inputValue() !== '', 'person sheet shows the birthday');
+await L.locator('#pBMonth').selectOption('2'); await L.locator('#pBDay').selectOption('31');
+await L.locator('#sheetFoot .btn.primary').click(); await wait(300);
+check(/real month and day/.test(await L.locator('#toast').innerText()), 'Feb 31 is refused');
+await L.locator('#pBMonth').selectOption('3'); await L.locator('#pBDay').selectOption('14');
+await L.locator('#sheetFoot .btn.primary').click(); await wait(2200);
+check((await server()).people.find(p => p.id === target.id).birthday === '03-14', 'admin birthday edit reached the cloud');
+await G.locator('#gRefresh').click(); await wait(800);
+await G.locator(`#g [data-act="hh"][data-id="${target.householdId}"]`).first().click(); await wait(300);
+check(/Mar 14/.test(await G.locator('#sheetBody').innerText()), 'member sees the new birthday under their name');
+await G.locator('#sheetClose').click();
+// the admin resets the PIN; the member's phone is then asked again
+await L.locator(`#viewBody [data-act="editperson"][data-id="${target.id}"]`).click(); await wait(700);
+await L.locator('#pPinReset').click(); await wait(900);
+check(/Not set/.test(await L.locator('#pPinState').innerText()), 'admin reset clears the PIN');
+await L.locator('#sheetClose').click();
+await G.locator(`#g [data-act="hh"][data-id="${target.householdId}"]`).first().click(); await wait(300);
+await G.locator('#hAddr').fill('200 Reset Ave'); await G.locator('#sheetFoot .btn.primary').click(); await wait(900);
+check(/PIN again/.test(await G.locator('#toast').innerText()), 'after a reset the member is asked again: ' + await G.locator('#toast').innerText());
+check((await server()).households.find(h => h.id === target.householdId).address !== '200 Reset Ave', 'and that change did not go through');
+// marking someone not a man takes them out of the line
+await L.locator(`#viewBody [data-act="editperson"][data-id="${target.id}"]`).click(); await wait(400);
+await L.locator('#pGender [data-v="f"]').click(); await L.locator('#sheetFoot .btn.primary').click(); await wait(2200);
+check(!(await server()).meetings.some(m => m.date >= TODAY && m.devoId === target.id), 'marking someone not a man takes them off the Fridays');
+await L.locator(`#viewBody [data-act="editperson"][data-id="${target.id}"]`).click(); await wait(400);
+await L.locator('#pGender [data-v="m"]').click(); await L.locator('#sheetFoot .btn.primary').click(); await wait(1500);
+// add a man through the admin app: he joins the line
+await L.locator('[data-act="addperson"]').click(); await wait(250);
+await L.locator('#pName').fill('Test Brother'); await L.locator('#pGender [data-v="m"]').click();
+await L.locator('#pBMonth').selectOption('12'); await L.locator('#pBDay').selectOption('24');
+await L.locator('#sheetFoot .btn.primary').click(); await wait(2200);
+const sN = await server(); const newMan = sN.people.find(p => p.name === 'Test Brother');
+check(newMan && newMan.birthday === '12-24' && sN.devotion.order.includes(newMan.id), 'a man added in the admin app joins the devotional line');
+// a household with a woman and a man: signed in as her, the sheet names him instead of saying "me"
+const sF = await server();
+const mixed = sF.households.find(h => { const ps = sF.people.filter(p => p.householdId === h.id && p.active !== false); return ps.some(p => p.gender === 'f') && ps.some(p => p.gender === 'm'); });
+const mixedMan = sF.people.find(p => p.householdId === mixed.id && p.gender === 'm');
+const mixedWoman = sF.people.find(p => p.householdId === mixed.id && p.gender === 'f');
+await G.evaluate(() => localStorage.removeItem('bsg.me'));
+await G.reload({ waitUntil: 'networkidle' }); await wait(400);
+await G.locator('[data-act="view"][data-v="list"]').click(); await wait(200);
+await G.locator(`#g [data-act="hh"][data-id="${mixed.id}"]`).first().click(); await wait(300);
+await G.locator(`#sheetBody [data-me="${mixedWoman.id}"]`).click(); await wait(600);
+await G.locator('#pinIn').fill(PIN); await G.locator('#sheetFoot .btn.primary').click(); await wait(800);
+const holdLabel = await G.locator(`#sheetBody [data-devohold="${mixedMan.id}"]`).innerText();
+check(holdLabel.includes(mixedMan.name.split(' ')[0]) && !/\bme\b/.test(holdLabel), 'a sister signed in sees her brother named on his devotional: ' + holdLabel);
+await shot(G, '32-group-mixed-household');
+await G.locator('#sheetClose').click();
+// a meeting day that also has a birthday
+const onMeeting = sF.people.filter(p => p.birthday).map(p => ({ p, date: '2026-' + p.birthday })).find(x => sF.meetings.some(m => m.date === x.date && m.status === 'on'));
+await G.locator('[data-act="view"][data-v="cal"]').click(); await wait(300);
+await goMonth(G, onMeeting.date);
+const bdMeet = await calCell(G, onMeeting.date);
+check(bdMeet.includes(onMeeting.p.name.split(' ')[0]), `a meeting day shows the birthday too (${bdMeet.replace(/\n/g, ' ')})`);
+await shot(G, '33-group-birthday-on-meeting-day');
+await goMonth(G, TODAY);
+// the admin calendar list gives the devotional its own line, and the person sheet reads cleanly
+await go(L, 'cal'); await wait(300);
+const calRow = L.locator('#viewBody .list [data-act="week"]').first();
+check(await calRow.locator('.s').count() === 2 && /^Devotional: /.test(await calRow.locator('.s').nth(1).innerText()), 'admin calendar row has the devotional on its own line');
+await go(L, 'people'); await wait(250);
+await L.locator(`#viewBody [data-act="editperson"][data-id="${mixedMan.id}"]`).click(); await wait(400);
+const lineBtn = await L.locator('#sheetBody [data-act="man"]').innerText();
+check(/^Devotional: /.test(lineBtn) && !/devotional .*devotional/i.test(lineBtn), 'person sheet line button reads cleanly: ' + lineBtn);
+await L.locator('#sheetClose').click();
+// narrow phone
+await G.setViewportSize({ width: 360, height: 740 }); await G.locator('[data-act="view"][data-v="cal"]').click(); await wait(300);
+check(await G.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'no sideways scroll at 360px');
+await shot(G, '30-group-360');
+await L.setViewportSize({ width: 360, height: 740 }); await go(L, 'men'); await wait(300);
+check(await L.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'admin Men view: no sideways scroll at 360px');
+check(await L.evaluate(() => [...document.querySelectorAll('.seg.four button')].every(b => b.scrollWidth <= b.clientWidth + 1 && b.offsetHeight < 50)), 'admin switcher stays on one line at 360px');
+await shot(L, '31-admin-men-360');
 
 console.log('\nerrors:', errors.length ? errors.join('\n') : 'none');
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nall passed');

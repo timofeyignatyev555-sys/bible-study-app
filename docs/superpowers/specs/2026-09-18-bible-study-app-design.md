@@ -4,9 +4,9 @@ Tim leads a weekly Friday Bible study (30 people). He wants a phone-first, synce
 
 ## Decisions (from the brainstorm)
 
-- Host unit = sibling household. Pairs: Anna + David Bak, Timofey + Arina Ignatyev, Diana Maltseva + Karolina, Lidia + Tavifa Loghinova, Elijah + Samuel Lelyukh. Liza and Alex Dumyan are cousins, separate. Everyone else is a household of one. Attendance is always per person.
+- Host unit = sibling household (five sibling pairs; the roster itself lives only in the private sync repo and KV). Everyone else is a household of one. Attendance is always per person.
 - Meets every Friday, default 7:00 PM, season Sep 18 → Dec 31, 2026 (extendable in Settings).
-- Rotation: David Rachkovskiy hosts tonight (Sep 18). After that a one-time random order, editable. The plan is generated for the whole season; skips shift people forward, they do not go to the back.
+- Rotation: the first host is set by hand for tonight (Sep 18). After that a one-time random order, editable. The plan is generated for the whole season; skips shift people forward, they do not go to the back.
 - "Can't host this week": next household takes the date, the skipped household gets the next Friday, everyone after shifts one week.
 - "Unavailable until <date>" / "unavailable indefinitely" (Tim: remodeling + moving) / "never hosts": generator skips them, they re-enter at the first open Friday once eligible.
 - Off weeks and events at a non-household location consume nobody's turn.
