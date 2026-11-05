@@ -1,11 +1,11 @@
 // Bible Study: roster, calendar, attendance and hosting rotation. Phone-first, local-first, mirrored to the cloud.
 // The group page (group/) reads and writes the same cloud copy through the worker; sync merges those changes in.
-import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, isPast, hasAttendance, weekdayOf, addDays, householdLabel, reassignHost, nextInLine, liveHouseholds, setHold, activeMen, devoWeek, devoApplies, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, recentChanges } from './rotation.js';
+import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, isPast, hasAttendance, weekdayOf, addDays, householdLabel, reassignHost, nextInLine, liveHouseholds, setHold, activeMen, devoWeek, devoApplies, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, recentChanges, untouchedWeek } from './rotation.js';
 import * as store from './store.js';
 import * as sync from './sync.js';
 import { calendarHTML, shortName, shiftMonth, startMonth, personShort, birthdaysIn, fmtBirthday } from './calgrid.js';
 
-const VERSION = '2.3.2';
+const VERSION = '2.3.3';
 let state = null;
 let tab = 'home'; // home | settings
 let view = null;  // home body: list | cal | people | men (remembered per device)
@@ -867,9 +867,8 @@ function saveSettings() {
   const oldDay = s.weekday, oldEnd = s.seasonEnd;
   Object.assign(s, { name, weekday, defaultTime, seasonStart, seasonEnd });
   const t = today();
-  const blank = m => m.status === 'on' && m.kind === 'study' && !m.topic && !m.notes && !m.leaderId && !hasAttendance(m) && m.hostMode !== 'pinned' && !m.location && !(m.skipped || []).length;
   // drop untouched future weeks that no longer belong to the season
-  state.meetings = state.meetings.filter(m => !(m.date >= t && blank(m) && (weekdayOf(m.date) !== weekday || m.date > seasonEnd || m.date < seasonStart)));
+  state.meetings = state.meetings.filter(m => !(m.date >= t && untouchedWeek(m) && (weekdayOf(m.date) !== weekday || m.date > seasonEnd || m.date < seasonStart)));
   commit(oldDay !== weekday || oldEnd !== seasonEnd ? 'Season updated' : 'Saved');
 }
 function exportJSON() {

@@ -465,6 +465,31 @@ await L.locator(`#viewBody [data-act="editperson"][data-id="${mixedMan.id}"]`).c
 const lineBtn = await L.locator('#sheetBody [data-act="man"]').innerText();
 check(/^Devotional: /.test(lineBtn) && !/devotional .*devotional/i.test(lineBtn), 'person sheet line button reads cleanly: ' + lineBtn);
 await L.locator('#sheetClose').click();
+// the Season end step in Settings: later gives every man a Friday; earlier drops only weeks nobody touched
+await go(L, 'settings'); await wait(200);
+await L.locator('#setEnd').fill('2027-03-12'); await L.locator('[data-act="savesettings"]').click(); await wait(2200);
+const sE = await server();
+const menE = sE.people.filter(p => p.gender === 'm' && p.active !== false);
+const gotE = new Set(sE.meetings.filter(m => m.date >= TODAY && m.status === 'on' && !m.devoOff && m.devoId).map(m => m.devoId));
+check(menE.every(p => gotE.has(p.id)), `a later season end gives all ${menE.length} men a Friday`);
+check(sE.meetings.filter(m => m.date > '2026-12-31').every(m => m.hostHouseholdId && m.devoId), 'and every added Friday has a host and a devotional');
+await go(L, 'men'); await wait(300);
+check(/Every man is already on the schedule/.test(await L.locator('#viewBody').innerText()), 'and the Men tab says so');
+const janWeek = sE.meetings.find(m => m.date === '2027-01-08');
+const janHolder = janWeek.devoId;
+await L.locator(`#viewBody [data-act="devoweek"][data-id="${janWeek.id}"]`).click(); await wait(250);
+await L.locator('#sheetBody [data-act="pickdevo"]').click(); await wait(250);
+await L.locator('#sheetBody [data-pick]').first().click(); await wait(2200);
+const sE2 = await server();
+check(sE2.meetings.find(m => m.id === janWeek.id).devoMode === 'pinned' && sE2.meetings.find(m => m.id === janWeek.id).devoId !== janHolder, 'a devotional can be swapped into January');
+const fridaysKept = sE2.meetings.filter(m => m.date <= '2026-12-31').map(m => `${m.id}:${m.hostHouseholdId}:${m.status}`).join();
+await go(L, 'settings'); await wait(200);
+await L.locator('#setEnd').fill('2026-12-31'); await L.locator('[data-act="savesettings"]').click(); await wait(2200);
+const sE3 = await server();
+const afterSeason = sE3.meetings.filter(m => m.date > '2026-12-31');
+check(afterSeason.some(m => m.id === janWeek.id), 'shrinking the season keeps a week with a swapped devotional');
+check(afterSeason.length && afterSeason.every(m => m.devoMode === 'pinned' || m.hostMode === 'pinned'), `and drops the weeks nobody touched (${afterSeason.length} kept of ${sE2.meetings.filter(m => m.date > '2026-12-31').length})`);
+check(sE3.meetings.filter(m => m.date <= '2026-12-31').map(m => `${m.id}:${m.hostHouseholdId}:${m.status}`).join() === fridaysKept, 'and this season\'s weeks and hosts are untouched');
 // narrow phone
 await G.setViewportSize({ width: 360, height: 740 }); await G.locator('[data-act="view"][data-v="cal"]').click(); await wait(300);
 check(await G.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'no sideways scroll at 360px');

@@ -325,3 +325,9 @@ export function shuffle(arr, rng = Math.random) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
+
+// A future week nobody has touched, so shrinking the season or changing the weekday may drop it. Anything set by hand keeps it, hosting or devotional.
+export function untouchedWeek(m) {
+  return m.status === 'on' && m.kind === 'study' && !m.topic && !m.notes && !m.leaderId && !hasAttendance(m) && m.hostMode !== 'pinned' && !m.location && !(m.skipped || []).length
+    && m.devoMode !== 'pinned' && !(m.devoSkipped || []).length && !m.devoOff;
+}

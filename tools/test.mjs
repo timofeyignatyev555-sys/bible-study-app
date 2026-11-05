@@ -1,6 +1,6 @@
 // Generator tests. Run: node tools/test.mjs
 import assert from 'node:assert/strict';
-import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, householdLabel, reassignHost, nextInLine, setHold, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, devoApplies, recentChanges } from '../js/rotation.js';
+import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, householdLabel, reassignHost, nextInLine, setHold, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, devoApplies, recentChanges, untouchedWeek } from '../js/rotation.js';
 import { merge3, normalize } from '../js/store.js';
 import { personShort, birthdaysIn, fmtBirthday, calendarHTML } from '../js/calgrid.js';
 
@@ -326,6 +326,14 @@ t('recent changes: the leader sees first PINs merged with the log, newest first,
   assert.equal(recentChanges(s, [], 1).length, 1);
   assert.deepEqual(recentChanges({ ...s, log: undefined }).length, 0);
   assert.deepEqual(recentChanges(s).map(e => e.id), ['l2', 'l1'], 'works before any claims have loaded');
+});
+
+t('shrinking the season only drops untouched weeks: anything set by hand stays, hosting or devotional', () => {
+  const week = extra => ({ id: 'm', date: D[0], status: 'on', kind: 'study', hostMode: 'auto', location: null, attendance: {}, skipped: [], devoMode: 'auto', devoSkipped: [], devoOff: false, ...extra });
+  assert.equal(untouchedWeek(week({ devoId: 'pA', hostHouseholdId: 'A' })), true, 'an auto week can go');
+  assert.equal(untouchedWeek({ id: 'm', date: D[0], status: 'on', kind: 'study' }), true, 'a freshly added week can go');
+  for (const [why, extra] of [['a swapped devotional', { devoMode: 'pinned' }], ['a man who could not do it', { devoSkipped: ['pA'] }], ['no devotional this week', { devoOff: true }], ['a swapped host', { hostMode: 'pinned' }], ['a host who could not', { skipped: ['A'] }], ['a topic', { topic: 'Romans 8' }], ['notes', { notes: 'x' }], ['a leader', { leaderId: 'pA' }], ['attendance', { attendance: { pA: true } }], ['another place', { location: { name: 'Church' } }], ['an event', { kind: 'event' }], ['a cancelled week', { status: 'off' }]])
+    assert.equal(untouchedWeek(week(extra)), false, why + ' keeps the week');
 });
 
 // ---------- calendar helpers
