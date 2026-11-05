@@ -1,16 +1,17 @@
 // Bible Study: roster, calendar, attendance and hosting rotation. Phone-first, local-first, mirrored to the cloud.
 // The group page (group/) reads and writes the same cloud copy through the worker; sync merges those changes in.
-import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, isPast, hasAttendance, weekdayOf, addDays, householdLabel, reassignHost, nextInLine, liveHouseholds, setHold, activeMen, devoWeek, devoApplies, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold } from './rotation.js';
+import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, isPast, hasAttendance, weekdayOf, addDays, householdLabel, reassignHost, nextInLine, liveHouseholds, setHold, activeMen, devoWeek, devoApplies, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, recentChanges } from './rotation.js';
 import * as store from './store.js';
 import * as sync from './sync.js';
 import { calendarHTML, shortName, shiftMonth, startMonth, personShort, birthdaysIn, fmtBirthday } from './calgrid.js';
 
-const VERSION = '2.3.1';
+const VERSION = '2.3.2';
 let state = null;
 let tab = 'home'; // home | settings
 let view = null;  // home body: list | cal | people | men (remembered per device)
 let peopleFilter = '';
 let calMonth = null; // 'YYYY-MM' shown in the month view
+let pinClaims = []; // [{ personId, at }]: who set a group page PIN. Fetched from the worker, never stored in the shared document.
 
 // ---------- helpers
 const $ = s => document.querySelector(s);
@@ -153,6 +154,16 @@ function reconcile(server) {
 async function pullAndAdopt() {
   try { const r = await sync.pull(); if (r) reconcile(r.state); } catch {}
 }
+// Who set a PIN. Listing costs more than a pull, so this runs when the app opens or comes back to the front, not on the 60-second timer.
+async function loadPinClaims() {
+  if (!sync.token()) return;
+  try {
+    const { pins } = await sync.pinList();
+    const changed = JSON.stringify(pins) !== JSON.stringify(pinClaims);
+    pinClaims = pins;
+    if (changed && state && !document.body.classList.contains('modal')) render();
+  } catch {}
+}
 
 function showConnect(err) {
   $('#connect').classList.remove('hidden'); $('#app').classList.add('hidden');
@@ -166,11 +177,11 @@ async function boot() {
   if (hash.get('token')) { sync.setToken(hash.get('token')); history.replaceState(null, '', location.pathname + location.search); }
   const local = store.load();
   if (local) {
-    state = store.normalize(local, today()); ensureSeason(); replan(); lastSaved = JSON.stringify(state); showApp(); pullAndAdopt();
+    state = store.normalize(local, today()); ensureSeason(); replan(); lastSaved = JSON.stringify(state); showApp(); pullAndAdopt(); loadPinClaims();
   } else if (sync.token()) {
     try {
       const r = await sync.pull();
-      if (r && r.state) { adopt(r.state); sync.setBase(r.state); showApp(); toast('Connected'); }
+      if (r && r.state) { adopt(r.state); sync.setBase(r.state); showApp(); toast('Connected'); loadPinClaims(); }
       else { state = store.normalize(store.emptyState(today()), today()); commit(); showApp(); }
     } catch (e) { showConnect(e.code === 'forbidden' ? 'That token was rejected.' : 'Could not reach the sync server. Check your connection and try again.'); }
   } else showConnect();
@@ -244,7 +255,7 @@ function heroHTML() {
 // The admin home: the same layout the group sees (this week, hosting list, calendar) plus the leader's tools.
 function renderHome() {
   if (!view) view = store.getPref('view') || 'list';
-  const log = (state.log || []).slice(-8).reverse();
+  const log = recentChanges(state, pinClaims);
   let html = heroHTML();
   html += `<div class="btn-row admin-actions"><button class="btn" data-act="addperson">+ Add people</button><button class="btn" data-act="addevent">+ Add event</button><button class="btn" data-act="sharegroup">Share link</button></div>
   <div class="seg four">${[['list', 'Hosting list'], ['cal', 'Calendar'], ['people', 'People'], ['men', 'Men']].map(([k, l]) => `<button data-act="view" data-v="${k}" aria-pressed="${view === k}">${l}</button>`).join('')}</div>
@@ -753,7 +764,7 @@ async function showPin(id) {
     $('#pPinReset').classList.toggle('hidden', !info.set);
   };
   $('#pPinReset').addEventListener('click', async () => {
-    try { await sync.pinReset(id); toast('PIN cleared. They pick a new one next time.'); await paint(); } catch { toast('Could not reach the sync server'); }
+    try { await sync.pinReset(id); toast('PIN cleared. They pick a new one next time.'); await paint(); loadPinClaims(); } catch { toast('Could not reach the sync server'); }
   });
   await paint();
 }
@@ -941,7 +952,7 @@ $('#sheetClose').addEventListener('click', closeSheet); $('#backdrop').addEventL
 $('#tokenGo').addEventListener('click', () => connectWith(v('tokenIn').trim(), $('#tokenErr')));
 $('#tokenIn').addEventListener('keydown', e => { if (e.key === 'Enter') connectWith(v('tokenIn').trim(), $('#tokenErr')); });
 $('#startLocal').addEventListener('click', () => { state = store.normalize(store.emptyState(today()), today()); ensureSeason(); replan(); store.save(state); lastSaved = JSON.stringify(state); showApp(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state) { replan(); render(); pullAndAdopt(); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state) { replan(); render(); pullAndAdopt(); loadPinClaims(); } });
 setInterval(() => { if (document.visibilityState === 'visible' && state && sync.token() && !document.body.classList.contains('modal')) pullAndAdopt(); }, 60000);
 window.addEventListener('online', () => sync.flushNow());
 window.addEventListener('pagehide', () => sync.flushNow());

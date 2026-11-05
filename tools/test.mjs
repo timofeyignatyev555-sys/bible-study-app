@@ -1,6 +1,6 @@
 // Generator tests. Run: node tools/test.mjs
 import assert from 'node:assert/strict';
-import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, householdLabel, reassignHost, nextInLine, setHold, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, devoApplies } from '../js/rotation.js';
+import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, householdLabel, reassignHost, nextInLine, setHold, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, devoApplies, recentChanges } from '../js/rotation.js';
 import { merge3, normalize } from '../js/store.js';
 import { personShort, birthdaysIn, fmtBirthday, calendarHTML } from '../js/calgrid.js';
 
@@ -315,6 +315,17 @@ t('normalize: older documents get the new fields without losing anything', () =>
   assert.equal(n.meetings[0].devoId, null); assert.equal(n.meetings[0].devoMode, 'auto'); assert.deepEqual(n.meetings[0].devoSkipped, []); assert.equal(n.meetings[0].devoOff, false);
   const keep = normalize({ settings: {}, people: [], households: [], meetings: [], rotation: { order: [] }, devotion: { order: ['x'] } }, TODAY);
   assert.deepEqual(keep.devotion.order, ['x']);
+});
+
+t('recent changes: the leader sees first PINs merged with the log, newest first, without touching the document', () => {
+  const s = mk(['A', 'B']); s.log = [{ id: 'l1', at: '2026-11-01T10:00:00Z', text: 'older change' }, { id: 'l2', at: '2026-11-03T10:00:00Z', text: 'newer change' }];
+  const before = JSON.stringify(s);
+  const r = recentChanges(s, [{ personId: 'pA', at: '2026-11-02T10:00:00Z' }, { personId: 'gone', at: '2026-11-04T10:00:00Z' }]);
+  assert.deepEqual(r.map(e => e.text), ['newer change', 'PA set their group page PIN', 'older change']);
+  assert.equal(JSON.stringify(s), before);
+  assert.equal(recentChanges(s, [], 1).length, 1);
+  assert.deepEqual(recentChanges({ ...s, log: undefined }).length, 0);
+  assert.deepEqual(recentChanges(s).map(e => e.id), ['l2', 'l1'], 'works before any claims have loaded');
 });
 
 // ---------- calendar helpers

@@ -309,6 +309,16 @@ export function setHold(state, hid, onHold, until = null, today) {
   return { ok: true };
 }
 
+// The leader's "Recent changes": the group's log, plus who set a group page PIN. PIN claims live outside the shared document,
+// so a member's request never rewrites it and a full log cannot push one out; they are only merged here for display. Newest first.
+export function recentChanges(state, pinClaims = [], n = 8) {
+  const claims = pinClaims.flatMap(c => {
+    const p = state.people.find(x => x.id === c.personId);
+    return p ? [{ id: 'pin_' + c.personId, at: c.at || '', text: `${p.name} set their group page PIN` }] : [];
+  });
+  return [...(state.log || []), ...claims].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).slice(0, n);
+}
+
 // Deterministic shuffle helper (Fisher-Yates with an injectable rng) used by the seed and the Hosting tab.
 export function shuffle(arr, rng = Math.random) {
   const a = [...arr];
