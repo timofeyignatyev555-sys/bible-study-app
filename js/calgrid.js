@@ -39,6 +39,14 @@ export function birthdaysIn(ym, people) {
     })
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.name.localeCompare(b.name)));
 }
+// A long season folds away once everyone on it has appeared, so whatever sits below the list stays within reach.
+// ids: who has each upcoming week, in date order. Returns how many weeks to show (0 when nobody is scheduled).
+export function foldPoint(ids) {
+  const seen = new Set();
+  let cut = 0;
+  ids.forEach((id, i) => { if (id && !seen.has(id)) { seen.add(id); cut = i + 1; } });
+  return cut;
+}
 export function shiftMonth(ym, n) {
   const [y, m] = ym.split('-').map(Number);
   const d = new Date(y, m - 1 + n, 1);

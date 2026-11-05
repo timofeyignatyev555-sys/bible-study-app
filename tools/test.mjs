@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { plan, datesOfWeekday, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, householdLabel, reassignHost, nextInLine, setHold, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, devoApplies, recentChanges, untouchedWeek } from '../js/rotation.js';
 import { merge3, normalize } from '../js/store.js';
-import { personShort, birthdaysIn, fmtBirthday, calendarHTML } from '../js/calgrid.js';
+import { personShort, birthdaysIn, fmtBirthday, calendarHTML, foldPoint } from '../js/calgrid.js';
 
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok  ' + name); };
 
@@ -337,6 +337,13 @@ t('shrinking the season only drops untouched weeks: anything set by hand stays, 
 });
 
 // ---------- calendar helpers
+t('a long season folds once everyone on it has appeared', () => {
+  assert.equal(foldPoint(['a', 'b', 'c', 'a', 'b', 'c', 'a']), 3);
+  assert.equal(foldPoint(['a', null, 'b', 'a', 'c', 'b']), 5, 'weeks with nobody do not count, but stay in order');
+  assert.equal(foldPoint(['a', 'b', 'a', 'b', 'c']), 5, 'a late first appearance stays visible');
+  assert.equal(foldPoint(['a', 'b', 'c']), 3, 'a short season never folds');
+  assert.equal(foldPoint([null, null]), 0); assert.equal(foldPoint([]), 0);
+});
 t('short names: first name unless someone shares it', () => {
   const names = ['Anna Smith', 'Dan Bell', 'Dan Lowe', 'Sam Reed', 'JJ'];
   assert.equal(personShort('Anna Smith', names), 'Anna');

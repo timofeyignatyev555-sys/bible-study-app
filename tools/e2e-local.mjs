@@ -242,13 +242,36 @@ await G.locator('[data-act="view"][data-v="cal"]').click(); await wait(300);
 const janBd = withBirthdays.find(p => p.birthday.startsWith('01-'));
 await goMonth(G, `2027-${janBd.birthday}`);
 check((await G.locator('.cal .nav h3').innerText()) === 'January 2027', 'calendar pages past the last meeting to January');
-const janCell = G.locator(`.cal [data-act="calbday"][data-date="2027-${janBd.birthday}"]`);
+const janCell = G.locator(`.cal [aria-label^="2027-${janBd.birthday}"]`); // a birthday-only day, or a meeting day with a birthday in it
 check(await janCell.count() === 1, `January shows the birthday on ${janBd.birthday}`);
 await shot(G, '16-group-january-birthdays');
 await janCell.click(); await wait(250);
 check((await G.locator('#sheetBody').innerText()).includes(janBd.name), 'tapping a birthday day names the person');
 await G.locator('#sheetClose').click();
 check(/Birthdays in January/i.test(await G.locator('#g').innerText()), 'birthday list under the January calendar');
+
+// ---------- a long season folds away; the names below stay within reach
+await G.locator('[data-act="view"][data-v="list"]').click(); await wait(250);
+const sF0 = await server();
+const gF = (await (await fetch(WORKER + '/group', { headers: { 'X-Group-Key': gkey } })).json()).group;
+const upF = gF.meetings.filter(m => !m.past);
+if (upF.length > 30) {
+  check(await G.locator('#later').count() === 1 && !(await G.locator('#later .row').first().isVisible()), 'group: later weeks start folded away');
+  const foldTxt = await G.locator('#g').innerText();
+  const hostLabels = [...new Set(upF.filter(m => m.status === 'on' && m.hostId).map(m => gF.households.find(h => h.id === m.hostId).label))];
+  check(hostLabels.every(l => foldTxt.includes(l)), `group: all ${hostLabels.length} hosts can be found without opening them`);
+  await shot(G, '34-group-fold');
+  await G.locator('#later summary').click(); await wait(200);
+  check(await G.locator('#later .row').first().isVisible(), 'group: tapping shows the later weeks');
+  const lastUp = upF[upF.length - 1];
+  check((await G.locator('#later').innerText()).toUpperCase().includes(new Date(lastUp.date + 'T12:00').toLocaleString('en-US', { month: 'long' }).toUpperCase()), 'group: they run to the end of the season');
+  await G.locator('#gRefresh').click(); await wait(800);
+  check(await G.locator('#later').evaluate(el => el.open), 'group: and stay open across a refresh');
+  await G.locator('#later summary').click(); await wait(200);
+  await G.locator('#gRefresh').click(); await wait(800);
+  check(!(await G.locator('#later').evaluate(el => el.open)), 'group: closing stays closed');
+}
+await G.locator('[data-act="view"][data-v="cal"]').click(); await wait(250);
 
 // ---------- the devotional as members see it
 const sD = await server();
@@ -275,7 +298,7 @@ check(!gData.includes('group page PIN'), 'first-PIN log lines stay with the lead
 
 // ---------- a man moves his own devotional
 const man1Week = dWeeks[1]; const man1 = sD.people.find(p => p.id === man1Week.devoId);
-const partnerWeek = dWeeks[dWeeks.length - 1]; const partner = sD.people.find(p => p.id === partnerWeek.devoId);
+const partnerWeek = dWeeks[5]; const partner = sD.people.find(p => p.id === partnerWeek.devoId); // a trade takes his next Friday
 await beMember(man1.householdId);
 await G.locator(`#g [data-act="hh"][data-id="${man1.householdId}"]`).first().click(); await wait(300);
 await shot(G, '19-group-man-sheet');
@@ -343,6 +366,16 @@ const sM = await server();
 const allMen = sM.people.filter(p => p.gender === 'm' && p.active !== false);
 const missingMen = allMen.filter(p => !menTxt.includes(p.name)).map(p => p.name);
 check(!missingMen.length, `Men view lists every man (${allMen.length}${missingMen.length ? '; missing ' + missingMen.join(', ') : ''})`);
+check(new RegExp(`All ${allMen.length} men`, 'i').test(menTxt) && await L.locator('#viewBody section [data-act="man"]').count() >= allMen.length, 'Men view has a list of all the men, one row each');
+if (sM.meetings.filter(m => m.date >= TODAY).length > 30) {
+  check(await L.locator('#laterM').count() === 1 && !(await L.locator('#laterM .row').first().isVisible()), 'Men view: later weeks start folded away');
+  await L.locator('#laterM summary').click(); await wait(200);
+  check(await L.locator('#laterM .row').first().isVisible(), 'Men view: tapping shows them');
+  await L.locator('#laterM summary').click(); await wait(200);
+  await go(L, 'list'); await wait(250);
+  check(await L.locator('#laterH').count() === 1 && !(await L.locator('#laterH .row').first().isVisible()), 'Hosting list: later weeks start folded away');
+  await go(L, 'men'); await wait(250);
+}
 check(!sM.log.some(e => /group page PIN/.test(e.text)), 'a first PIN is never written into the shared document');
 check(/set their group page PIN/.test(await L.locator('#recentA').innerText()), 'the leader sees who set a PIN under recent changes');
 const leakedWomen = sM.people.filter(p => p.gender === 'f').filter(p => menTxt.includes(p.name)).filter(f => !sM.meetings.some(m => m.date >= TODAY && (sM.households.find(h => h.id === m.hostHouseholdId) || {}).name === f.name)).map(p => p.name);
@@ -372,7 +405,7 @@ check(gm.meetings.find(m => m.id === secondWeek.id).devoId === null, 'admin: no 
 await L.locator(`#viewBody [data-act="devoweek"][data-id="${secondWeek.id}"]`).click(); await wait(200);
 await L.locator('#sheetBody [data-act="devoon"]').click(); await wait(1500);
 // a man's sheet: earlier in the line
-const lineMan = await L.locator('#viewBody [data-act="man"]').nth(1).getAttribute('data-id');
+const lineMan = await L.locator('#viewBody [data-act="man"]').last().getAttribute('data-id');
 await L.locator(`#viewBody [data-act="man"][data-id="${lineMan}"]`).first().click(); await wait(250);
 await shot(L, '27-admin-man-sheet');
 const orderBefore = await L.evaluate(() => JSON.stringify(window.__bs.state.devotion.order));
@@ -467,6 +500,8 @@ check(/^Devotional: /.test(lineBtn) && !/devotional .*devotional/i.test(lineBtn)
 await L.locator('#sheetClose').click();
 // the Season end step in Settings: later gives every man a Friday; earlier drops only weeks nobody touched
 await go(L, 'settings'); await wait(200);
+await L.locator('#setEnd').fill('2026-12-31'); await L.locator('[data-act="savesettings"]').click(); await wait(2200);
+await go(L, 'settings'); await wait(200);
 await L.locator('#setEnd').fill('2027-03-12'); await L.locator('[data-act="savesettings"]').click(); await wait(2200);
 const sE = await server();
 const menE = sE.people.filter(p => p.gender === 'm' && p.active !== false);
@@ -502,3 +537,4 @@ await shot(L, '31-admin-men-360');
 console.log('\nerrors:', errors.length ? errors.join('\n') : 'none');
 console.log(fails.length ? `\n${fails.length} FAILED` : '\nall passed');
 await browser.close();
+process.exitCode = fails.length || errors.length ? 1 : 0;

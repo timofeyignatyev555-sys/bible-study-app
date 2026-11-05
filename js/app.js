@@ -3,9 +3,9 @@
 import { plan, todayISO, hostStats, attendanceStats, fillSeason, currentQueue, shuffle, isPast, hasAttendance, weekdayOf, addDays, householdLabel, reassignHost, nextInLine, liveHouseholds, setHold, activeMen, devoWeek, devoApplies, devoQueue, devoNextInLine, devoStats, reassignDevo, setDevoHold, recentChanges, untouchedWeek } from './rotation.js';
 import * as store from './store.js';
 import * as sync from './sync.js';
-import { calendarHTML, shortName, shiftMonth, startMonth, personShort, birthdaysIn, fmtBirthday } from './calgrid.js';
+import { calendarHTML, shortName, shiftMonth, startMonth, personShort, birthdaysIn, fmtBirthday, foldPoint } from './calgrid.js';
 
-const VERSION = '2.3.3';
+const VERSION = '2.3.4';
 let state = null;
 let tab = 'home'; // home | settings
 let view = null;  // home body: list | cal | people | men (remembered per device)
@@ -333,6 +333,13 @@ function renderPeople() {
   inp.addEventListener('input', () => { peopleFilter = inp.value; const pos = inp.selectionStart; renderPeople(); const n = $('#peopleSearch'); n.focus(); try { n.setSelectionRange(pos, pos); } catch {} });
 }
 
+// A long season folds away once everyone on it has appeared, so the sections below stay within reach. Stays open across refreshes once opened.
+const laterWeeks = (id, weeks, rowOf) => {
+  if (!weeks.length) return '';
+  const [ly, lm] = parts(weeks[weeks.length - 1].date);
+  return `<details class="adv" id="${id}" ${store.getPref(id) ? 'open' : ''}><summary>Later weeks, through ${MONL[lm - 1]} ${ly} (${weeks.length})</summary><div class="list" style="margin-top:8px">${weeks.map(m => rowOf(m)).join('')}</div></details>`;
+};
+
 function renderHosting() {
   const t = today();
   const ms = sorted();
@@ -341,7 +348,8 @@ function renderHosting() {
   const line = nextInLine(state, t);
   const resting = liveHouseholds(state).filter(h => h.hostStatus !== 'available' && !line.includes(h.id) && !upcoming.some(m => m.hostHouseholdId === h.id)).sort((a, b) => hostLabel(a).localeCompare(hostLabel(b)));
   const hhRow = (h, lead, sub) => `<button class="row tap" data-act="edithh" data-id="${h.id}">${lead}<div class="main"><div class="t">${esc(hostLabel(h))}${h.hostStatus !== 'available' ? ` <span class="chip warn">${esc(hostStatusText(h))}</span>` : ''}</div><div class="s ${h.address ? '' : 'warn'}">${esc(sub ?? (h.address || 'no address yet'))}</div></div></button>`;
-  let html = `<section><div class="eyebrow">Schedule · tap a week to change it</div><div class="list">${upcoming.length ? upcoming.map(m => rowMeeting(m, { hosting: true })).join('') : '<div class="empty">No weeks left. Extend the season in Settings.</div>'}</div></section>`;
+  const cut = foldPoint(upcoming.map(m => m.hostHouseholdId)) || upcoming.length;
+  let html = `<section><div class="eyebrow">Schedule · tap a week to change it</div><div class="list">${upcoming.length ? upcoming.slice(0, cut).map(m => rowMeeting(m, { hosting: true })).join('') : '<div class="empty">No weeks left. Extend the season in Settings.</div>'}</div>${laterWeeks('laterH', upcoming.slice(cut), m => rowMeeting(m, { hosting: true }))}</section>`;
   html += `<section><div class="eyebrow">Next in line after ${upcoming.length ? fmtShort(upcoming[upcoming.length - 1].date) : 'the season'}</div><div class="list">${line.length ? line.map((id, i) => hhRow(hh(id), `<div class="n">${i + 1}</div>`)).join('') : '<div class="empty">Everyone who can host is already on the schedule.</div>'}</div>
   ${line.length > 1 ? `<button class="btn sm ghost" style="align-self:flex-start" data-act="shuffle">Shuffle this order</button>` : ''}</section>`;
   if (resting.length) html += `<section><div class="eyebrow">On hold / not hosting · tap a name to edit</div><div class="list">${resting.map(h => hhRow(h, '', [hostStatusText(h), h.note].filter(Boolean).join(' · '))).join('')}</div></section>`;
@@ -366,15 +374,17 @@ function renderMen() {
   const upcoming = ms.filter(m => m.date >= t);
   const done = ms.filter(m => isPast(m, t) && m.date < t && devoOf(m));
   const line = devoNextInLine(state, t);
-  const scheduled = new Set(upcoming.filter(m => devoOf(m)).map(m => m.devoId));
-  const resting = men.filter(p => !line.includes(p.id) && !scheduled.has(p.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const st = devoStats(state, t);
+  const nextOf = p => (st[p.id] && st[p.id].next) || '9999';
+  const byNext = [...men].sort((a, b) => (nextOf(a) < nextOf(b) ? -1 : nextOf(a) > nextOf(b) ? 1 : a.name.localeCompare(b.name)));
+  const cut = foldPoint(upcoming.map(m => (devoOf(m) ? m.devoId : null))) || upcoming.length;
   const unmarked = activePeople().filter(p => !p.gender).sort((a, b) => a.name.localeCompare(b.name));
   const manRow = (p, lead) => `<button class="row tap" data-act="man" data-id="${p.id}">${lead}<div class="main"><div class="t">${esc(p.name)}${devoHoldText(p) ? ` <span class="chip warn">${esc(devoHoldText(p))}</span>` : ''}</div></div><div class="k">›</div></button>`;
   let html = `<section><h2>Friday devotional</h2><p class="dim">${men.length} ${men.length === 1 ? 'man' : 'men'}, one each Friday. Members only see who has it that Friday, on their calendar. This list stays here.</p></section>`;
-  html += `<section><div class="eyebrow">Schedule · tap a week to change it</div><div class="list">${upcoming.length ? upcoming.map(devoRow).join('') : '<div class="empty">No weeks left. Extend the season in Settings.</div>'}</div></section>`;
+  html += `<section><div class="eyebrow">Schedule · tap a week to change it</div><div class="list">${upcoming.length ? upcoming.slice(0, cut).map(m => devoRow(m)).join('') : '<div class="empty">No weeks left. Extend the season in Settings.</div>'}</div>${laterWeeks('laterM', upcoming.slice(cut), devoRow)}</section>`;
+  html += `<section><div class="eyebrow">All ${men.length} ${men.length === 1 ? 'man' : 'men'} · tap a name</div><div class="list">${byNext.length ? byNext.map(p => `<button class="row tap" data-act="man" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}${devoHoldText(p) ? ` <span class="chip warn">${esc(devoHoldText(p))}</span>` : ''}</div><div class="s">${esc(st[p.id] && st[p.id].next ? 'Next: ' + fmtShort(st[p.id].next) : devoPlacement(p.id))}</div></div><div class="k">›</div></button>`).join('') : '<div class="empty">No men marked yet. Open a person and set Man.</div>'}</div></section>`;
   html += `<section><div class="eyebrow">Next in line after ${upcoming.length ? fmtShort(upcoming[upcoming.length - 1].date) : 'the season'}</div><div class="list">${line.length ? line.map((id, i) => manRow(person(id), `<div class="n">${i + 1}</div>`)).join('') : '<div class="empty">Every man is already on the schedule.</div>'}</div>
   ${line.length > 1 ? `<button class="btn sm ghost" style="align-self:flex-start" data-act="shufflemen">Shuffle this order</button>` : ''}</section>`;
-  if (resting.length) html += `<section><div class="eyebrow">On hold / not in the line · tap a name to edit</div><div class="list">${resting.map(p => manRow(p, '')).join('')}</div></section>`;
   if (unmarked.length) html += `<section><div class="eyebrow">Not marked yet · tap to set man or woman</div><div class="list">${unmarked.map(p => `<button class="row tap" data-act="editperson" data-id="${p.id}"><div class="main"><div class="t">${esc(p.name)}</div></div><div class="k">›</div></button>`).join('')}</div></section>`;
   if (done.length) html += `<details class="adv"><summary>Already said it (${done.length})</summary><div class="list" style="margin-top:8px">${done.slice().reverse().map(devoRow).join('')}</div></details>`;
   $('#viewBody').innerHTML = html;
@@ -946,7 +956,7 @@ document.addEventListener('click', e => {
   if (acts[act]) acts[act]();
 });
 document.addEventListener('change', e => { if (e.target.id === 'importFile' && e.target.files[0]) importJSON(e.target.files[0]); });
-document.addEventListener('toggle', e => { if (e.target.id === 'recentA') store.setPref('recentOpen', e.target.open ? '1' : null); }, true);
+document.addEventListener('toggle', e => { if (e.target.id === 'recentA') store.setPref('recentOpen', e.target.open ? '1' : null); if (e.target.id === 'laterH' || e.target.id === 'laterM') store.setPref(e.target.id, e.target.open ? '1' : null); }, true);
 $('#sheetClose').addEventListener('click', closeSheet); $('#backdrop').addEventListener('click', closeSheet);
 $('#tokenGo').addEventListener('click', () => connectWith(v('tokenIn').trim(), $('#tokenErr')));
 $('#tokenIn').addEventListener('keydown', e => { if (e.key === 'Enter') connectWith(v('tokenIn').trim(), $('#tokenErr')); });

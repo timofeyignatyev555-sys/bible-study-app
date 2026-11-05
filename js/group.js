@@ -2,7 +2,7 @@
 // Looking needs nothing: you scroll to a name and tap it. Changing anything means tapping your own name and typing your PIN (the worker
 // enforces this), and then only your own household: address, phones, hosting week, hold and devotional. Everything else is the leader's,
 // in the admin app. Talks to the worker with the group key, never the leader token.
-import { calendarHTML, shortName, shiftMonth, startMonth, personShort, birthdaysIn, fmtBirthday } from './calgrid.js';
+import { calendarHTML, shortName, shiftMonth, startMonth, personShort, birthdaysIn, fmtBirthday, foldPoint } from './calgrid.js';
 
 const WORKER = localStorage.getItem('bs.worker') || 'https://bible-study-sync.ophir-marketing-agency.workers.dev';
 
@@ -131,15 +131,18 @@ const hhRow = (h, lead) => `<button class="row tap" data-act="hh" data-id="${h.i
 
 function renderSchedule() {
   const up = upcoming(), past = g.meetings.filter(m => m.past);
-  let html = `<section><h2>Schedule</h2>`;
-  let cur = '';
-  for (const m of up) {
-    const mk = m.date.slice(0, 7);
-    if (mk !== cur) { if (cur) html += '</div>'; cur = mk; const [y, mo] = parts(m.date); html += `<div class="eyebrow month">${MONL[mo - 1]} ${y}</div><div class="list">`; }
-    html += row(m);
-  }
-  if (cur) html += '</div>'; else html += '<div class="list"><div class="empty">Nothing scheduled yet.</div></div>';
-  html += '</section>';
+  const months = list => {
+    let out = '', cur = '';
+    for (const m of list) {
+      const mk = m.date.slice(0, 7);
+      if (mk !== cur) { if (cur) out += '</div>'; cur = mk; const [y, mo] = parts(m.date); out += `<div class="eyebrow month">${MONL[mo - 1]} ${y}</div><div class="list">`; }
+      out += row(m);
+    }
+    return cur ? out + '</div>' : out;
+  };
+  const cut = foldPoint(up.map(m => m.hostId)) || up.length;
+  let html = `<section><h2>Schedule</h2>${up.length ? months(up.slice(0, cut)) : '<div class="list"><div class="empty">Nothing scheduled yet.</div></div>'}</section>`;
+  if (up.length > cut) { const [ly, lm] = parts(up[up.length - 1].date); html += `<details class="adv" id="later" ${pref('laterOpen') ? 'open' : ''}><summary>Later weeks, through ${MONL[lm - 1]} ${ly} (${up.length - cut})</summary>${months(up.slice(cut))}</details>`; }
   if (g.nextInLine.length) html += `<section><h2>Next in line</h2><p class="dim">Who hosts after the last scheduled week, in order.</p><div class="list">${g.nextInLine.map((id, i) => hhRow(hh(id), `<div class="n">${i + 1}</div>`)).join('')}</div></section>`;
   // everyone else (not hosting right now) still needs a place to tap their name
   const shown = new Set([...up.map(m => m.hostId), ...g.nextInLine]);
@@ -380,7 +383,7 @@ document.addEventListener('click', e => {
   else if (a === 'calnav') { calMonth = shiftMonth(calMonth, +b.dataset.dir); render(); }
   else if (a === 'view') { pref('view', b.dataset.v); render(); }
 });
-document.addEventListener('toggle', e => { if (e.target.id === 'recent') pref('recentOpen', e.target.open ? '1' : null); }, true);
+document.addEventListener('toggle', e => { if (e.target.id === 'recent') pref('recentOpen', e.target.open ? '1' : null); if (e.target.id === 'later') pref('laterOpen', e.target.open ? '1' : null); }, true);
 $('#gRefresh').addEventListener('click', () => { netState = 'loading'; render(); refresh(false); });
 $('#sheetClose').addEventListener('click', closeSheet); $('#backdrop').addEventListener('click', closeSheet);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !document.body.classList.contains('modal')) refresh(true); });
